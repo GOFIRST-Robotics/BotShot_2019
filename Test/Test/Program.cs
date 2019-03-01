@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Threading;
 using Microsoft.SPOT;
 using Microsoft.SPOT.Hardware;
@@ -19,6 +20,10 @@ namespace Test
 
     const int kTimeoutMs = 30;
     const float kF = .0133f;
+    static Queue basketAngleBuffer = new Queue();
+    static Queue basketDistanceBuffer = new Queue();
+    static float filteredBasketAngle;
+    static short filteredBasketDistance;
 
     // Create a GamePad Object
     static GameController gamepad = new GameController(new UsbHostDevice(0));
@@ -43,7 +48,7 @@ namespace Test
 
     public static void Main()
     {
-      //Initialize();
+      Initialize();
 
       while (true)
       {
@@ -230,6 +235,13 @@ namespace Test
       _uart = new System.IO.Ports.SerialPort(CTRE.HERO.IO.Port1.UART, 115200);
       _uart.Open();
 
+      // Init queues
+      for (int i = 0; i < 30; i++)
+      {
+        basketAngleBuffer.Enqueue(0);
+        basketDistanceBuffer.Enqueue(0);
+      }
+
       // Victor SPX Slaves
       // Left Slave
       victor1.Set(ControlMode.Follower, 0);
@@ -348,6 +360,30 @@ namespace Test
               ushort distance = BitConverter.ToUInt16(_rx, packetOfs);
               short angle = BitConverter.ToInt16(_rx, packetOfs + 2);
               float rangle = ((float)angle) / 10f; // Angle is multiplied by 10 on pi to be sent over wire
+              if (rangle != 0)
+              {
+                basketAngleBuffer.Enqueue(rangle);
+                basketAngleBuffer.Dequeue();
+
+                basketDistanceBuffer.Enqueue(distance);
+                basketDistanceBuffer.Dequeue();
+
+                // Use moving average filter to filter angle and distance
+                float sumAngle = 0;
+                foreach (float f in basketAngleBuffer.ToArray())
+                {
+                  sumAngle += f;
+                }
+                filteredBasketAngle = sumAngle / basketAngleBuffer.Count;
+
+                int sumDist = 0;
+                foreach (short f in basketDistanceBuffer.ToArray())
+                {
+                  sumDist += f;
+                }
+                filteredBasketDistance = (short) (sumDist / basketAngleBuffer.Count);
+              }
+
               Debug.Print("Camera says: " + distance + " in @ " + rangle + "deg");
             }
             break;
