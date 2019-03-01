@@ -39,11 +39,7 @@ namespace Test
     static VictorSPX victor1 = new VictorSPX(1); // Left 1
     static VictorSPX victor0 = new VictorSPX(0); // Left 0
 
-    // Initialize Pixy Cameras
-    static CTRE.ThirdParty.PixyCamera pixy = new CTRE.ThirdParty.PixyCamera(CTRE.HERO.IO.Port8, 10000);
-
-    static CTRE.ThirdParty.PixyBlock currentBlock = new CTRE.ThirdParty.PixyBlock();
-    static CTRE.ThirdParty.PixyBlock blockToFill = new CTRE.ThirdParty.PixyBlock();
+    static System.IO.Ports.SerialPort _uart;
 
     public static void Main()
     {
@@ -51,12 +47,12 @@ namespace Test
 
       while (true)
       {
-        if(gamepad.GetConnectionStatus() == UsbDeviceConnection.Connected)
+        if (gamepad.GetConnectionStatus() == UsbDeviceConnection.Connected)
         {
           CTRE.Phoenix.Watchdog.Feed();
 
           //Drive();
-          //Camera();
+          Camera();
           Intake();
           Feeder();
           Shooter();
@@ -90,7 +86,7 @@ namespace Test
 
     static void DeadZone(ref float val)
     {
-      if(val < 0.1 && val > -0.1)
+      if (val < 0.1 && val > -0.1)
       {
         val = 0;
       }
@@ -132,12 +128,12 @@ namespace Test
 
     static void Shooter()
     {
-      if(gamepad.GetAxis(1) != 0)
+      if (gamepad.GetAxis(1) != 0)
       {
         float x = gamepad.GetAxis(1); // Left stick up/down
-        //x = x * x * x * x * x;
-        //Debug.Print(x.ToString());
-        if(shooter.GetSelectedSensorVelocity(0) > 85000)
+                                      //x = x * x * x * x * x;
+                                      //Debug.Print(x.ToString());
+        if (shooter.GetSelectedSensorVelocity(0) > 85000)
         {
           shooter.Set(ControlMode.Velocity, 85000);
         }
@@ -158,7 +154,7 @@ namespace Test
         shooter.Set(ControlMode.PercentOutput, 0);
       }
 
-      float rpm = (shooter.GetSelectedSensorVelocity(0) * 150) / 1024; 
+      float rpm = (shooter.GetSelectedSensorVelocity(0) * 150) / 1024;
       //Debug.Print("Rpm: " + rpm.ToString());
     }
 
@@ -173,7 +169,7 @@ namespace Test
       {
         hood.Set(ControlMode.PercentOutput, -1 * hoodSpeed);
       }
-      else if(gamepad.GetButton(1))
+      else if (gamepad.GetButton(1))
       {
         Debug.Print("Trying to move to target...");
         hood.Set(ControlMode.Position, 200);
@@ -184,7 +180,7 @@ namespace Test
         hood.Set(ControlMode.PercentOutput, 0);
       }
 
-      Debug.Print(hood.GetSelectedSensorPosition(0).ToString());
+      //Debug.Print(hood.GetSelectedSensorPosition(0).ToString());
     }
 
     static void Turret()
@@ -206,6 +202,10 @@ namespace Test
 
     static void Initialize()
     {
+      // Serial port
+      _uart = new System.IO.Ports.SerialPort(CTRE.HERO.IO.Port1.UART, 115200);
+      _uart.Open();
+
       // Victor SPX Slaves
       // Left Slave
       victor1.Set(ControlMode.Follower, 0);
@@ -232,13 +232,13 @@ namespace Test
       hood.Config_kF(0, 0f, kTimeoutMs);
       /* use slot0 for closed-looping */
       hood.SelectProfileSlot(0, 0);
-      
+
       /* set the peak and nominal outputs, 1.0 means full */
       hood.ConfigNominalOutputForward(0.0f, kTimeoutMs);
       hood.ConfigNominalOutputReverse(0.0f, kTimeoutMs);
       hood.ConfigPeakOutputForward(+1.0f, kTimeoutMs);
       hood.ConfigPeakOutputReverse(-1.0f, kTimeoutMs);
-      
+
       /* how much error is allowed?  This defaults to 0. */
       hood.ConfigAllowableClosedloopError(0, 0, kTimeoutMs);
 
@@ -294,40 +294,43 @@ namespace Test
 
     static void Camera()
     {
-      /* Clear the average of X, Y, and Area */
-      int AverageX = 0;
-      int AverageY = 0;
-      int AverageArea = 0;
-      int AvgCount = 3;
-
-      /* Adds up the pervious values of X, Y, and Area */
-      for (int j = 0; j < 3; j++)
+      // Each packet is 8 bytes
+      if (_uart.BytesToRead >= 8)
       {
-        /* Run Pixy process to check for Data, pull Block if there is data */
-        Thread.Sleep(5);
-        pixy.Process();
-        if (pixy.GetBlock(blockToFill))
+        byte[] _rx = new byte[24];
+        int readCnt = _uart.Read(_rx, 0, _uart.BytesToRead);
+        int zeroCount = 0;
+
+        // Each packet is four null bytes followed by the data
+        // To make sure we have a full packet (and align ourselves) read until we see four zeros,
+        // and then read the next four as the packet
+        for (int i = 0; i < readCnt; i++)
         {
-          /* Store block from Pixy into Local Block */
-          currentBlock = blockToFill;
-
-          /* Uncomment for block data */
-          Debug.Print("===================================");
-          Debug.Print(blockToFill.ToString());
+          // Count zeros
+          if (_rx[i] == 0)
+          {
+            zeroCount++;
+          }
+          else
+          {
+            zeroCount = 0;
+          }
+          // We have a packet
+          if (zeroCount == 4)
+          {
+            int packetOfs = i + 1;
+            if (readCnt - packetOfs >= 4)
+            {
+              ushort distance = BitConverter.ToUInt16(_rx, packetOfs);
+              short angle = BitConverter.ToInt16(_rx, packetOfs + 2);
+              float rangle = ((float)angle) / 10f; // Angle is multiplied by 10 to be sent over wire
+              Debug.Print("Camera says: " + distance + " in @ " + rangle + "deg");
+            }
+            break;
+          }
         }
-
-        /* Pull Block data into variables */
-        AverageX += currentBlock.X;         /* Pull X from CurrentBlock */
-        AverageY += currentBlock.Y;         /* Pull Y from CurrentBlock */
-        AverageArea += currentBlock.Area;   /* Pull Area from CurrentBlock */
       }
 
-      /* Finishes the average process by dividing the sum by the number of values */
-      AverageX /= AvgCount;
-      AverageY /= AvgCount;
-      AverageArea /= AvgCount;
-
-      Debug.Print("X: " + AverageX.ToString() + " Y: " + AverageY.ToString() + " Area: " + AverageArea.ToString());
     }
 
     static void TestAxis()
