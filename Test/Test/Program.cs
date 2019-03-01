@@ -43,7 +43,7 @@ namespace Test
 
     public static void Main()
     {
-      Initialize();
+      //Initialize();
 
       while (true)
       {
@@ -52,12 +52,12 @@ namespace Test
           CTRE.Phoenix.Watchdog.Feed();
 
           //Drive();
-          Camera();
-          Intake();
-          Feeder();
-          Shooter();
+          //Camera();
+          //Intake();
+          //Feeder();
+          //Shooter();
           Hood();
-          //Turret();
+          Turret();
         }
 
         Thread.Sleep(10);
@@ -163,11 +163,25 @@ namespace Test
       // Buttons are toggles
       if (gamepad.GetButton(2))
       {
-        hood.Set(ControlMode.PercentOutput, hoodSpeed);
+        if (hood.GetSelectedSensorPosition(0) > 350)
+        {
+          hood.Set(ControlMode.Position, 350);
+        }
+        else
+        {
+          hood.Set(ControlMode.PercentOutput, hoodSpeed);
+        }
       }
       else if (gamepad.GetButton(4))
       {
-        hood.Set(ControlMode.PercentOutput, -1 * hoodSpeed);
+        if(hood.GetSelectedSensorPosition(0) < 50)
+        {
+          hood.Set(ControlMode.Position, 50);
+        }
+        else
+        {
+          hood.Set(ControlMode.PercentOutput, -1 * hoodSpeed);
+        }
       }
       else if (gamepad.GetButton(1))
       {
@@ -180,24 +194,34 @@ namespace Test
         hood.Set(ControlMode.PercentOutput, 0);
       }
 
-      //Debug.Print(hood.GetSelectedSensorPosition(0).ToString());
+
+
+      Debug.Print(hood.GetSelectedSensorPosition(0).ToString());
     }
 
     static void Turret()
     {
       // Buttons are toggles
-      if (gamepad.GetButton(3))
+      if (gamepad.GetButton(7))
       {
-        turret.Set(ControlMode.PercentOutput, hoodSpeed);
+        turret.Set(ControlMode.PercentOutput, turretSpeed);
+      }
+      else if (gamepad.GetButton(8))
+      {
+        turret.Set(ControlMode.PercentOutput, -1 * turretSpeed);
       }
       else if (gamepad.GetButton(1))
       {
-        turret.Set(ControlMode.PercentOutput, -1 * hoodSpeed);
+        Debug.Print("Trying to move to target...");
+        //turret.Set(ControlMode.Position, 200);
+        Debug.Print(turret.GetSelectedSensorPosition(0).ToString());
       }
       else
       {
         turret.Set(ControlMode.PercentOutput, 0);
       }
+
+      //Debug.Print(turret.GetSelectedSensorPosition(0).ToString());
     }
 
     static void Initialize()
@@ -323,25 +347,13 @@ namespace Test
             {
               ushort distance = BitConverter.ToUInt16(_rx, packetOfs);
               short angle = BitConverter.ToInt16(_rx, packetOfs + 2);
-              float rangle = ((float)angle) / 10f; // Angle is multiplied by 10 to be sent over wire
+              float rangle = ((float)angle) / 10f; // Angle is multiplied by 10 on pi to be sent over wire
               Debug.Print("Camera says: " + distance + " in @ " + rangle + "deg");
             }
             break;
           }
         }
       }
-
-    }
-
-    static void TestAxis()
-    {
-      Debug.Print("Axis 0: " + gamepad.GetAxis(0));
-      Debug.Print("Axis 1: " + gamepad.GetAxis(1));
-      Debug.Print("Axis 2: " + gamepad.GetAxis(2));
-      Debug.Print("Axis 3: " + gamepad.GetAxis(3));
-      Debug.Print("Axis 4: " + gamepad.GetAxis(4));
-      Debug.Print("Axis 5: " + gamepad.GetAxis(5));
-      Debug.Print("Axis 6: " + gamepad.GetAxis(6));
     }
   }
 }
