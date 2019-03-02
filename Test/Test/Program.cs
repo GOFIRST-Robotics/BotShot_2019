@@ -13,10 +13,14 @@ namespace Test
 {
   public class Program
   {
-    const float intakeSpeed = 0.25f;
+    const float intakeSpeed = 0.35f;
     const float feederSpeed = 1f;
     const float hoodSpeed = 0.4f;
     const float turretSpeed = 0.4f;
+    const float driveSpeed = 0.8f;
+    const float turnSpeed = 0.6f;
+
+    static float shooterTarget = 75000;
 
     const int kTimeoutMs = 30;
     const float kF = .0133f;
@@ -24,6 +28,14 @@ namespace Test
     static Queue basketDistanceBuffer = new Queue();
     static float filteredBasketAngle;
     static short filteredBasketDistance;
+
+    enum EBut : uint
+    {
+      X = 1, A = 2, B = 3, Y = 4,
+      LB = 5, RB = 6, LT = 7, RT = 8,
+      SELECT = 9, START = 10,
+      LJ = 11, RJ = 12, T = 13
+    };
 
     // Create a GamePad Object
     static GameController gamepad = new GameController(new UsbHostDevice(0));
@@ -56,11 +68,11 @@ namespace Test
         {
           CTRE.Phoenix.Watchdog.Feed();
 
-          //Drive();
+          Drive();
           //Camera();
-          //Intake();
-          //Feeder();
-          //Shooter();
+          Intake();
+          Feeder();
+          Shooter();
           Hood();
           Turret();
         }
@@ -76,6 +88,9 @@ namespace Test
 
       DeadZone(ref x);
       DeadZone(ref z);
+
+      z *= turnSpeed;
+      x *= driveSpeed;
 
       float left = x + z;
       float right = x - z;
@@ -100,7 +115,7 @@ namespace Test
     static void Feeder()
     {
       // Buttons are toggles
-      if (gamepad.GetButton(6))
+      if (gamepad.GetButton((uint)EBut.RB))
       {
         feederR.Set(ControlMode.PercentOutput, feederSpeed);
       }
@@ -117,7 +132,7 @@ namespace Test
     static void Intake()
     {
       // Buttons are toggles
-      if (gamepad.GetButton(5))
+      if (gamepad.GetButton((uint)EBut.LB))
       {
         intakeRgt.Set(ControlMode.PercentOutput, intakeSpeed);
       }
@@ -133,26 +148,28 @@ namespace Test
 
     static void Shooter()
     {
-      if (gamepad.GetAxis(1) != 0)
-      {
-        float x = gamepad.GetAxis(1); // Left stick up/down
-                                      //x = x * x * x * x * x;
-                                      //Debug.Print(x.ToString());
-        if (shooter.GetSelectedSensorVelocity(0) > 85000)
-        {
-          shooter.Set(ControlMode.Velocity, 85000);
-        }
-        else
-        {
-          shooter.Set(ControlMode.PercentOutput, x);
-        }
-        //Debug.Print("V: " + shooter.GetSelectedSensorVelocity(0).ToString());
-      }
-      else if (gamepad.GetButton(3))
+      //if (gamepad.GetAxis(1) != 0)
+      //{
+      //  float x = gamepad.GetAxis(1); // Left stick up/down
+      //                                //x = x * x * x * x * x;
+      //                                //Debug.Print(x.ToString());
+      //  if (shooter.GetSelectedSensorVelocity(0) > 85000)
+      //  {
+      //    shooter.Set(ControlMode.Velocity, 85000);
+      //  }
+      //  else
+      //  {
+      //    shooter.Set(ControlMode.PercentOutput, x);
+      //  }
+      //  //Debug.Print("V: " + shooter.GetSelectedSensorVelocity(0).ToString());
+      //}
+      //else
+      AdjustShooterSpeed();
+
+      if (gamepad.GetButton((uint)EBut.RT))
       {
         // Never let target exceed 85000
-        shooter.Set(ControlMode.Velocity, 50000);
-        //Debug.Print("V: " + shooter.GetSelectedSensorVelocity(0).ToString());
+        shooter.Set(ControlMode.Velocity, shooterTarget);
       }
       else
       {
@@ -161,12 +178,17 @@ namespace Test
 
       float rpm = (shooter.GetSelectedSensorVelocity(0) * 150) / 1024;
       //Debug.Print("Rpm: " + rpm.ToString());
+
+      Debug.Print("H: " + hood.GetSelectedSensorPosition(0).ToString() +
+                    " V: " + shooter.GetSelectedSensorVelocity(0).ToString() +
+                    " I: " + shooter.GetOutputCurrent() +
+                    " T: " + shooterTarget.ToString());
     }
 
     static void Hood()
     {
       // Buttons are toggles
-      if (gamepad.GetButton(2))
+      if (gamepad.GetButton((uint)EBut.A))
       {
         if (hood.GetSelectedSensorPosition(0) > 350)
         {
@@ -177,7 +199,7 @@ namespace Test
           hood.Set(ControlMode.PercentOutput, hoodSpeed);
         }
       }
-      else if (gamepad.GetButton(4))
+      else if (gamepad.GetButton((uint)EBut.Y))
       {
         if(hood.GetSelectedSensorPosition(0) < 50)
         {
@@ -188,45 +210,63 @@ namespace Test
           hood.Set(ControlMode.PercentOutput, -1 * hoodSpeed);
         }
       }
-      else if (gamepad.GetButton(1))
-      {
-        Debug.Print("Trying to move to target...");
-        hood.Set(ControlMode.Position, 200);
-        Debug.Print(hood.GetSelectedSensorPosition(0).ToString());
-      }
       else
       {
         hood.Set(ControlMode.PercentOutput, 0);
       }
-
-
-
-      Debug.Print(hood.GetSelectedSensorPosition(0).ToString());
     }
 
     static void Turret()
     {
       // Buttons are toggles
-      if (gamepad.GetButton(7))
+      if (gamepad.GetButton((uint)EBut.X))
       {
-        turret.Set(ControlMode.PercentOutput, turretSpeed);
+        if (turret.GetSelectedSensorPosition(0) < 390)
+        {
+          turret.Set(ControlMode.PercentOutput, 0);
+        }
+        else
+        {
+          turret.Set(ControlMode.PercentOutput, turretSpeed);
+        }
+        Debug.Print("This is button 1");
       }
-      else if (gamepad.GetButton(8))
+      else if (gamepad.GetButton((uint)EBut.B))
       {
-        turret.Set(ControlMode.PercentOutput, -1 * turretSpeed);
-      }
-      else if (gamepad.GetButton(1))
-      {
-        Debug.Print("Trying to move to target...");
-        //turret.Set(ControlMode.Position, 200);
-        Debug.Print(turret.GetSelectedSensorPosition(0).ToString());
+        if (turret.GetSelectedSensorPosition(0) > 425)
+        {
+          turret.Set(ControlMode.PercentOutput, 0);
+        }
+        else
+        {
+          turret.Set(ControlMode.PercentOutput, -1 * turretSpeed);
+        }
+        Debug.Print("this is button 3");
       }
       else
       {
         turret.Set(ControlMode.PercentOutput, 0);
       }
 
-      //Debug.Print(turret.GetSelectedSensorPosition(0).ToString());
+      //Debug.Print("Turret Pos:" + turret.GetSelectedSensorPosition(0).ToString());
+    }
+
+    static void AdjustShooterSpeed()
+    {
+      if (gamepad.GetButton((uint)EBut.SELECT))
+      {
+        Debug.Print("Increasing shooter target...");
+        shooterTarget += 1000;
+      }
+      else if (gamepad.GetButton((uint)EBut.START))
+      {
+        Debug.Print("Decreasing shooter target...");
+        shooterTarget -= 1000;
+      }
+      else
+      {
+        
+      }
     }
 
     static void Initialize()
@@ -325,7 +365,12 @@ namespace Test
       // how much error is allowed?  This defaults to 0.
       shooter.ConfigAllowableClosedloopError(0, 0, kTimeoutMs);
 
-      shooter.ConfigClosedloopRamp(0.5f, kTimeoutMs);
+      shooter.ConfigClosedloopRamp(20f, kTimeoutMs);
+
+      shooter.ConfigContinuousCurrentLimit(15, kTimeoutMs);
+      shooter.ConfigPeakCurrentDuration(50, kTimeoutMs);
+      shooter.ConfigPeakCurrentLimit(30, kTimeoutMs);
+      shooter.EnableCurrentLimit(true);
     }
 
     static void Camera()
