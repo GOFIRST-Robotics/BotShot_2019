@@ -20,10 +20,15 @@ namespace Test
     const float driveSpeed = 0.8f;
     const float turnSpeed = 0.6f;
 
-    static float shooterTarget = 75000;
+    const float SHOOTER_CONTINUOUS_CURRENT_LIMIT = 50; // [A]
+    const float SHOOTER_RPM_LIMIT = 6000f; // [RPM] at shooter wheels
+    const float SHOOTER_kP = 12f / 7500f; // [V]/[RPM error at shooter wheels]
+
+    // Shooter characteristics
+    const float SHOOTER_MOTOR_INTERNAL_RES = 0.022f; // [ohm]
+    const float SHOOTER_MOTOR_KV = 1250; // [RPM]/[V]
 
     const int kTimeoutMs = 30;
-    const float kF = .0133f;
     static Queue basketAngleBuffer = new Queue();
     static Queue basketDistanceBuffer = new Queue();
     static float filteredBasketAngle;
@@ -43,8 +48,7 @@ namespace Test
     // Initialize Talon SRX Objects
     static TalonSRX hood = new TalonSRX(7); // Hood positional
     static TalonSRX turret = new TalonSRX(6); // Turret positional
-    static TalonSRX shooterSlave = new TalonSRX(5); // Shooter R1 velocity
-    static TalonSRX shooter = new TalonSRX(4); // Shooter L0 velocity
+    static TalonSRX shooterSensorTalon = new TalonSRX(4); // Shooter velocity reader
     static TalonSRX intakeLft = new TalonSRX(3);  // Intake R1 button
     static TalonSRX intakeRgt = new TalonSRX(2);  // Intake L0 button
     static TalonSRX feederL = new TalonSRX(1); // Feeder R1 button
@@ -56,7 +60,14 @@ namespace Test
     static VictorSPX victor1 = new VictorSPX(1); // Left 1
     static VictorSPX victor0 = new VictorSPX(0); // Left 0
 
+    // UART for rpi connection
     static System.IO.Ports.SerialPort _uart;
+
+    // PWM for VESC shooter motor
+    // We only need one because the other follows over CAN
+    // Andrew- add SPOT.Hardware.PWM to your references
+    static PWMSpeedController shooterVESC;
+    static float shooterRPMTarget = 0;
 
     public static void Main()
     {
@@ -148,41 +159,34 @@ namespace Test
 
     static void Shooter()
     {
-      //if (gamepad.GetAxis(1) != 0)
-      //{
-      //  float x = gamepad.GetAxis(1); // Left stick up/down
-      //                                //x = x * x * x * x * x;
-      //                                //Debug.Print(x.ToString());
-      //  if (shooter.GetSelectedSensorVelocity(0) > 85000)
-      //  {
-      //    shooter.Set(ControlMode.Velocity, 85000);
-      //  }
-      //  else
-      //  {
-      //    shooter.Set(ControlMode.PercentOutput, x);
-      //  }
-      //  //Debug.Print("V: " + shooter.GetSelectedSensorVelocity(0).ToString());
-      //}
-      //else
       AdjustShooterSpeed();
 
+      float appVoltage = 0f;
+      float estimatedCurrent = 0f;
+      float shooterRPM = getShooterRPM();
+      float motorRPM = shooterRPM / 2f;
       if (gamepad.GetButton((uint)EBut.RT))
       {
-        // Never let target exceed 85000
-        shooter.Set(ControlMode.Velocity, shooterTarget);
+        shooterRPMTarget = (float) System.Math.Min(shooterRPMTarget, 5000f);
+        float targetVoltage = shooterRPMTarget / (SHOOTER_MOTOR_KV / 2) + SHOOTER_kP * (shooterRPMTarget - shooterRPM); // ff + kP*e
+        // Implements proactive current limiting based on V = IR + Ke*w
+        float maxVoltageForCurrentLimit = SHOOTER_CONTINUOUS_CURRENT_LIMIT * SHOOTER_MOTOR_INTERNAL_RES - 1f / SHOOTER_MOTOR_KV * motorRPM;
+        appVoltage = (float) System.Math.Min(targetVoltage, maxVoltageForCurrentLimit);
       }
       else
       {
-        shooter.Set(ControlMode.PercentOutput, 0);
+        appVoltage = 0;
       }
+      // Voltage compensation
+      shooterVESC.Set(appVoltage * shooterSensorTalon.GetBusVoltage());
+      estimatedCurrent = (appVoltage + 1f / SHOOTER_MOTOR_KV * shooterRPM) / SHOOTER_MOTOR_INTERNAL_RES;
 
-      float rpm = (shooter.GetSelectedSensorVelocity(0) * 150) / 1024;
       //Debug.Print("Rpm: " + rpm.ToString());
 
       Debug.Print("H: " + hood.GetSelectedSensorPosition(0).ToString() +
-                    " V: " + shooter.GetSelectedSensorVelocity(0).ToString() +
-                    " I: " + shooter.GetOutputCurrent() +
-                    " T: " + shooterTarget.ToString());
+                    " V: " + shooterRPM +
+                    " I: " + estimatedCurrent +
+                    " T: " + shooterRPMTarget);
     }
 
     static void Hood()
@@ -256,16 +260,12 @@ namespace Test
       if (gamepad.GetButton((uint)EBut.SELECT))
       {
         Debug.Print("Increasing shooter target...");
-        shooterTarget += 1000;
+        shooterRPMTarget += 250;
       }
       else if (gamepad.GetButton((uint)EBut.START))
       {
         Debug.Print("Decreasing shooter target...");
-        shooterTarget -= 1000;
-      }
-      else
-      {
-        
+        shooterRPMTarget -= 250;
       }
     }
 
@@ -295,9 +295,6 @@ namespace Test
       // Intake Slave
       intakeLft.Set(ControlMode.Follower, 2);
       intakeLft.SetInverted(true);
-      // Shooter Slave
-      shooterSlave.Set(ControlMode.Follower, 4);
-      shooterSlave.SetInverted(true);
 
       // Hood
       hood.ConfigSelectedFeedbackSensor(FeedbackDevice.Analog, 0, kTimeoutMs);
@@ -346,31 +343,11 @@ namespace Test
       turret.ConfigAllowableClosedloopError(0, 0, kTimeoutMs);
 
       // Shooter
-      shooter.ConfigSelectedFeedbackSensor(FeedbackDevice.QuadEncoder, 0, kTimeoutMs);
-      shooter.SetSensorPhase(true);
-      shooter.SetInverted(true);
-      shooter.Config_kP(0, 0.01f, kTimeoutMs); // tweak this first, a little bit of overshoot is okay
-      shooter.Config_kI(0, 0f, kTimeoutMs);
-      shooter.Config_kD(0, 0f, kTimeoutMs);
-      shooter.Config_kF(0, kF, kTimeoutMs);
-      // use slot0 for closed-looping
-      shooter.SelectProfileSlot(0, 0);
+      shooterSensorTalon.ConfigSelectedFeedbackSensor(FeedbackDevice.CTRE_MagEncoder_Relative, 0, kTimeoutMs);
+      shooterSensorTalon.SetSensorPhase(true);
 
-      // set the peak and nominal outputs, 1.0 means full
-      shooter.ConfigNominalOutputForward(0.0f, kTimeoutMs);
-      shooter.ConfigNominalOutputReverse(0.0f, kTimeoutMs);
-      shooter.ConfigPeakOutputForward(+1.0f, kTimeoutMs);
-      shooter.ConfigPeakOutputReverse(-1.0f, kTimeoutMs);
-
-      // how much error is allowed?  This defaults to 0.
-      shooter.ConfigAllowableClosedloopError(0, 0, kTimeoutMs);
-
-      shooter.ConfigClosedloopRamp(20f, kTimeoutMs);
-
-      shooter.ConfigContinuousCurrentLimit(15, kTimeoutMs);
-      shooter.ConfigPeakCurrentDuration(50, kTimeoutMs);
-      shooter.ConfigPeakCurrentLimit(30, kTimeoutMs);
-      shooter.EnableCurrentLimit(true);
+      shooterVESC = new PWMSpeedController(CTRE.HERO.IO.Port3.PWM_Pin4);
+      shooterVESC.Set(0);
     }
 
     static void Camera()
@@ -435,6 +412,15 @@ namespace Test
           }
         }
       }
+    }
+
+    static float getShooterRPM()
+    {
+      int talonVel = shooterSensorTalon.GetSelectedSensorVelocity(); // ticks/decisecond
+      float flywheelRPS = talonVel / 1023f * 10f; // 1023 ticks/rev, 10 deciseconds / second
+      float shooterRPS = flywheelRPS / 2.5f;  // Ratio from shooter to flywheel
+      float shooterRPM = shooterRPS * 60;
+      return shooterRPM;
     }
   }
 }
