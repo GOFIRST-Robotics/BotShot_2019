@@ -79,7 +79,7 @@ namespace Test
         {
           CTRE.Phoenix.Watchdog.Feed();
 
-          Drive();
+          //Drive();
           //Camera();
           Intake();
           Feeder();
@@ -162,30 +162,20 @@ namespace Test
       AdjustShooterSpeed();
 
       float appVoltage = 0f;
-      float estimatedCurrent = 0f;
-      float shooterRPM = getShooterRPM();
-      float motorRPM = shooterRPM / 2f;
       if (gamepad.GetButton((uint)EBut.RT))
       {
         shooterRPMTarget = (float) System.Math.Min(shooterRPMTarget, 5000f);
-        float targetVoltage = shooterRPMTarget / (SHOOTER_MOTOR_KV / 2) + SHOOTER_kP * (shooterRPMTarget - shooterRPM); // ff + kP*e
-        // Implements proactive current limiting based on V = IR + Ke*w
-        float maxVoltageForCurrentLimit = SHOOTER_CONTINUOUS_CURRENT_LIMIT * SHOOTER_MOTOR_INTERNAL_RES - 1f / SHOOTER_MOTOR_KV * motorRPM;
-        appVoltage = (float) System.Math.Min(targetVoltage, maxVoltageForCurrentLimit);
       }
       else
       {
-        appVoltage = 0;
+        shooterRPMTarget = 0;
       }
       // Voltage compensation
-      shooterVESC.Set(appVoltage * shooterSensorTalon.GetBusVoltage());
-      estimatedCurrent = (appVoltage + 1f / SHOOTER_MOTOR_KV * shooterRPM) / SHOOTER_MOTOR_INTERNAL_RES;
+      shooterVESC.Set(shooterRPMTarget / 5000f);
 
       //Debug.Print("Rpm: " + rpm.ToString());
 
       Debug.Print("H: " + hood.GetSelectedSensorPosition(0).ToString() +
-                    " V: " + shooterRPM +
-                    " I: " + estimatedCurrent +
                     " T: " + shooterRPMTarget);
     }
 
@@ -233,7 +223,6 @@ namespace Test
         {
           turret.Set(ControlMode.PercentOutput, turretSpeed);
         }
-        Debug.Print("This is button 1");
       }
       else if (gamepad.GetButton((uint)EBut.B))
       {
@@ -245,7 +234,6 @@ namespace Test
         {
           turret.Set(ControlMode.PercentOutput, -1 * turretSpeed);
         }
-        Debug.Print("this is button 3");
       }
       else
       {
@@ -346,7 +334,7 @@ namespace Test
       shooterSensorTalon.ConfigSelectedFeedbackSensor(FeedbackDevice.CTRE_MagEncoder_Relative, 0, kTimeoutMs);
       shooterSensorTalon.SetSensorPhase(true);
 
-      shooterVESC = new PWMSpeedController(CTRE.HERO.IO.Port3.PWM_Pin4);
+      shooterVESC = new PWMSpeedController(CTRE.HERO.IO.Port3.PWM_Pin7);
       shooterVESC.Set(0);
     }
 
