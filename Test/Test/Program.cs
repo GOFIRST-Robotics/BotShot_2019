@@ -32,6 +32,7 @@ namespace Test
     static Queue basketDistanceBuffer = new Queue();
     static float filteredBasketAngle;
     static short filteredBasketDistance;
+    static bool shooterAdjustLockout;
 
     enum EBut : uint
     {
@@ -169,7 +170,7 @@ namespace Test
       }
       else
       {
-        shooterRPMTarget = 0;
+        appVoltage = 0;
       }
       // Voltage compensation
       shooterVESC.Set(appVoltage / 48f);
@@ -248,13 +249,25 @@ namespace Test
     {
       if (gamepad.GetButton((uint)EBut.SELECT))
       {
-        Debug.Print("Increasing shooter target...");
-        shooterRPMTarget += 250;
+        if (!shooterAdjustLockout)
+        {
+          Debug.Print("Increasing shooter target...");
+          shooterRPMTarget += 100;
+          shooterAdjustLockout = true;
+        }
       }
       else if (gamepad.GetButton((uint)EBut.START))
       {
-        Debug.Print("Decreasing shooter target...");
-        shooterRPMTarget -= 250;
+        if (!shooterAdjustLockout)
+        {
+          Debug.Print("Decreasing shooter target...");
+          shooterRPMTarget -= 100;
+          shooterAdjustLockout = true;
+        }
+      }
+      else
+      {
+        shooterAdjustLockout = false;
       }
     }
 
