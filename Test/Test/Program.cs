@@ -22,11 +22,10 @@ namespace Test
 
     const float SHOOTER_CONTINUOUS_CURRENT_LIMIT = 50; // [A]
     const float SHOOTER_RPM_LIMIT = 6000f; // [RPM] at shooter wheels
-    const float SHOOTER_kP = 12f / 7500f; // [V]/[RPM error at shooter wheels]
+    const float SHOOTER_kP = 48f / 7500f; // [V]/[RPM error at shooter wheels]
 
     // Shooter characteristics
-    const float SHOOTER_MOTOR_INTERNAL_RES = 0.022f; // [ohm]
-    const float SHOOTER_MOTOR_KV = 1250; // [RPM]/[V]
+    const float SHOOTER_MOTOR_KV = 125; // [RPM]/[V]
 
     const int kTimeoutMs = 30;
     static Queue basketAngleBuffer = new Queue();
@@ -162,20 +161,22 @@ namespace Test
       AdjustShooterSpeed();
 
       float appVoltage = 0f;
+      float shooterRPM = getShooterRPM();
       if (gamepad.GetButton((uint)EBut.RT))
       {
-        shooterRPMTarget = (float) System.Math.Min(shooterRPMTarget, 5000f);
+        shooterRPMTarget = (float) System.Math.Min(shooterRPMTarget, SHOOTER_RPM_LIMIT);
+        appVoltage = shooterRPMTarget / SHOOTER_MOTOR_KV + (shooterRPMTarget - shooterRPM) * SHOOTER_kP;
       }
       else
       {
         shooterRPMTarget = 0;
       }
       // Voltage compensation
-      shooterVESC.Set(shooterRPMTarget / 5000f);
+      shooterVESC.Set(appVoltage / 48f);
 
       //Debug.Print("Rpm: " + rpm.ToString());
 
-      Debug.Print("H: " + hood.GetSelectedSensorPosition(0).ToString() +
+      Debug.Print("H: " + hood.GetSelectedSensorPosition(0).ToString() + " V: " + shooterRPM +
                     " T: " + shooterRPMTarget);
     }
 
@@ -405,8 +406,7 @@ namespace Test
     static float getShooterRPM()
     {
       int talonVel = shooterSensorTalon.GetSelectedSensorVelocity(); // ticks/decisecond
-      float flywheelRPS = talonVel / 1023f * 10f; // 1023 ticks/rev, 10 deciseconds / second
-      float shooterRPS = flywheelRPS / 2.5f;  // Ratio from shooter to flywheel
+      float shooterRPS = talonVel / 1023f * 10f; // 1023 ticks/rev, 10 deciseconds / second
       float shooterRPM = shooterRPS * 60;
       return shooterRPM;
     }
