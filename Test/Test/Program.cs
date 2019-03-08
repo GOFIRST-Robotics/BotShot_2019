@@ -19,13 +19,24 @@ namespace Test
     const float turretSpeed = 0.4f;
     const float driveSpeed = 0.8f;
     const float turnSpeed = 0.6f;
-
-    const float SHOOTER_CONTINUOUS_CURRENT_LIMIT = 50; // [A]
+    
     const float SHOOTER_RPM_LIMIT = 6000f; // [RPM] at shooter wheels
     const float SHOOTER_kP = 48f / 7500f; // [V]/[RPM error at shooter wheels]
 
     // Shooter characteristics
     const float SHOOTER_MOTOR_KV = 125; // [RPM]/[V]
+
+    // Hood characteristics
+    const int HOOD_LOWER_BOUND_ANALOG = 0; // todo adjust these
+    const int HOOD_UPPER_BOUND_ANALOG = 4095;
+    const int HOOD_LOWER_BOUND_ANGLE = 90; // degrees- when hood is in lowest position (ie all the way in)
+    const int HOOD_UPPER_BOUND_ANGLE = 0; // degrees- when hood is all the way out - lowest angle shot
+
+    // Turret characteristics
+    const int TURRET_LOWER_BOUND_ANALOG = 0; // todo adjust these
+    const int TURRET_UPPER_BOUND_ANALOG = 4095;
+    const int TURRET_LOWER_BOUND_ANGLE = -35; // degrees- when turret is all the way right
+    const int TURRET_UPPER_BOUND_ANGLE = 35; // degrees- when turret is all the way left
 
     const int kTimeoutMs = 30;
     static Queue basketAngleBuffer = new Queue();
@@ -416,6 +427,15 @@ namespace Test
       }
     }
 
+    // Takes an input X on the range AB and relates it to an output in the range CD
+    // That is, if A is passed in as X, this function returns C. If B is passed in, this function returns D
+    // Everywhere in between is linear
+    static float linRelate(float x, float a, float b, float c, float d)
+    {
+      float scale = (x - a) / (b - a);
+      return scale * (d - c) + c;
+    }
+
     static float getShooterRPM()
     {
       int talonVel = shooterSensorTalon.GetSelectedSensorVelocity(); // ticks/decisecond
@@ -423,5 +443,34 @@ namespace Test
       float shooterRPM = shooterRPS * 60;
       return shooterRPM;
     }
+
+    static float getHoodAngle()
+    {
+      int sensorPos = hood.GetSelectedSensorPosition();
+      return linRelate(sensorPos, HOOD_LOWER_BOUND_ANALOG, HOOD_UPPER_BOUND_ANALOG,
+                       HOOD_LOWER_BOUND_ANGLE, HOOD_UPPER_BOUND_ANGLE);
+    }
+
+    static float getTurretAngle()
+    {
+      int sensorPos = turret.GetSelectedSensorPosition();
+      return linRelate(sensorPos, TURRET_LOWER_BOUND_ANALOG, TURRET_UPPER_BOUND_ANALOG,
+                       TURRET_LOWER_BOUND_ANGLE, TURRET_UPPER_BOUND_ANGLE);
+    }
+
+    static void setHoodAngle(float angle)
+    {
+      int sensorPos = (int) linRelate(angle, HOOD_LOWER_BOUND_ANGLE, HOOD_UPPER_BOUND_ANGLE, 
+                                      HOOD_LOWER_BOUND_ANALOG, HOOD_UPPER_BOUND_ANALOG);
+      hood.Set(ControlMode.Position, sensorPos);
+    }
+
+    static void setTurretAngle(float angle)
+    {
+      int sensorPos = (int)linRelate(angle, TURRET_LOWER_BOUND_ANGLE, TURRET_UPPER_BOUND_ANGLE,
+                                      TURRET_LOWER_BOUND_ANALOG, TURRET_UPPER_BOUND_ANALOG);
+      turret.Set(ControlMode.Position, sensorPos);
+    }
+
   }
 }
