@@ -27,14 +27,14 @@ namespace Test
     const float SHOOTER_MOTOR_KV = 125; // [RPM]/[V]
 
     // Hood characteristics
-    const int HOOD_LOWER_BOUND_ANALOG = 0; // todo adjust these
-    const int HOOD_UPPER_BOUND_ANALOG = 1023;
-    const int HOOD_LOWER_BOUND_ANGLE = 90; // degrees- when hood is in lowest position (ie all the way in)
-    const int HOOD_UPPER_BOUND_ANGLE = 0; // degrees- when hood is all the way out - lowest angle shot
+    const int HOOD_LOWER_BOUND_ANALOG = 350; // todo adjust these
+    const int HOOD_UPPER_BOUND_ANALOG = 48;
+    const int HOOD_LOWER_BOUND_ANGLE = 85; // degrees- when hood is in lowest position (ie all the way in)
+    const int HOOD_UPPER_BOUND_ANGLE = 45; // degrees- when hood is all the way out - lowest angle shot
 
     // Turret characteristics
-    const int TURRET_LOWER_BOUND_ANALOG = 570; // todo adjust these
-    const int TURRET_UPPER_BOUND_ANALOG = 700;
+    const int TURRET_LOWER_BOUND_ANALOG = -370; // todo adjust these
+    const int TURRET_UPPER_BOUND_ANALOG = -495;
     const int TURRET_LOWER_BOUND_ANGLE = -26; // degrees- when turret is all the way right
     const int TURRET_UPPER_BOUND_ANGLE = 17; // degrees- when turret is all the way left
 
@@ -42,6 +42,9 @@ namespace Test
     static float filteredBasketAngle;
     static short filteredBasketDistance;
     static bool shooterAdjustLockout;
+    static bool turretAdjustLockout;
+
+    static bool isIntaking = false;
 
     static float hoodTargetAngle;
     static float turretTargetAngle;
@@ -93,11 +96,13 @@ namespace Test
 
           //Drive();
           //Camera();
-          //Intake();
+          Intake();
           //Feeder();
           Shooter();
-          //Hood();
-          //Turret();
+          Hood();
+          Turret();
+
+          Debug.Print("H: " + getHoodAngle() + " T: " + getTurretAngle() + " SV: " + getShooterRPM());
         }
 
         Thread.Sleep(10);
@@ -158,6 +163,8 @@ namespace Test
       if (gamepad.GetButton((uint)EBut.LB))
       {
         intakeRgt.Set(ControlMode.PercentOutput, intakeSpeed);
+        setTurretAngle(0);
+        isIntaking = true;
       }
       else if (gamepad.GetButton(11))
       {
@@ -166,6 +173,7 @@ namespace Test
       else
       {
         intakeRgt.Set(ControlMode.PercentOutput, 0);
+        isIntaking = false;
       }
     }
 
@@ -186,77 +194,51 @@ namespace Test
       }
       // Voltage compensation
       shooterVESC.Set(appVoltage);
-      
-      Debug.Print("H: " + hood.GetSelectedSensorPosition(0).ToString() + " V: " + shooterRPM +
-                    " T: " + shooterRPMTarget);
     }
 
+    static float hoodSetpoint = 60f;
     static void Hood()
     {
       // Buttons are toggles
       if (gamepad.GetButton((uint)EBut.A))
       {
-        if (hood.GetSelectedSensorPosition(0) > 350)
-        {
-          hood.Set(ControlMode.Position, 350);
-        }
-        else
-        {
-          hood.Set(ControlMode.PercentOutput, hoodSpeed);
-        }
+        hoodSetpoint += 0.5f;
       }
       else if (gamepad.GetButton((uint)EBut.Y))
       {
-        if (hood.GetSelectedSensorPosition(0) < 50)
-        {
-          hood.Set(ControlMode.Position, 50);
-        }
-        else
-        {
-          hood.Set(ControlMode.PercentOutput, -1 * hoodSpeed);
-        }
+        hoodSetpoint -= 0.5f;
       }
-      else
-      {
-        hood.Set(ControlMode.PercentOutput, 0);
-      }
+      setHoodAngle(hoodSetpoint);
     }
 
-    static int turretTarget = -472;
+    static float turretTarget = 0;
     static void Turret()
     {
-      if (turret.GetSelectedSensorPosition(0) > -370)
-      {
-        turret.Set(ControlMode.Position, -370);
-      }
-
-      if (turret.GetSelectedSensorPosition(0) < -495)
-      {
-        turret.Set(ControlMode.Position, -495);
-      }
-
-      // Buttons are toggles
       if (gamepad.GetButton((uint)EBut.X))
       {
-        turretTarget -= 1;
+        if (!turretAdjustLockout)
+        {
+          turretTarget -= 1f;
+          turretAdjustLockout = true;
+        }
       }
       else if (gamepad.GetButton((uint)EBut.B))
       {
-        turretTarget += 1;
+        if (!turretAdjustLockout)
+        {
+          turretTarget += 1f;
+          turretAdjustLockout = true;
+        }
       }
       else
       {
-        turretTarget += 0;
-        //turret.Set(ControlMode.PercentOutput, 0);
+        turretAdjustLockout = false;
       }
 
-      turret.Set(ControlMode.Position, turretTarget);
-
-      //  turret.Set(ControlMode.Position, turretTarget);
-      //}
-      Debug.Print(turretTarget.ToString());
-      //Debug.Print("Turret angle: " + getTurretAngle().ToString());
-      Debug.Print("Turret Pos:" + turret.GetSelectedSensorPosition(0).ToString());
+      if (!isIntaking)
+      {
+        setTurretAngle(turretTarget);
+      }
     }
 
     static void AdjustShooterSpeed()
@@ -265,7 +247,6 @@ namespace Test
       {
         if (!shooterAdjustLockout)
         {
-          Debug.Print("Increasing shooter target...");
           shooterRPMTarget += 100;
           shooterAdjustLockout = true;
         }
@@ -274,7 +255,6 @@ namespace Test
       {
         if (!shooterAdjustLockout)
         {
-          Debug.Print("Decreasing shooter target...");
           shooterRPMTarget -= 100;
           shooterAdjustLockout = true;
         }
@@ -320,14 +300,13 @@ namespace Test
       hood.ConfigNominalOutputReverse(0.0f, kTimeoutMs);
       hood.ConfigPeakOutputForward(+1.0f, kTimeoutMs);
       hood.ConfigPeakOutputReverse(-1.0f, kTimeoutMs);
+      hood.ConfigForwardSoftLimitThreshold(HOOD_LOWER_BOUND_ANALOG, kTimeoutMs);
+      hood.ConfigReverseSoftLimitThreshold(HOOD_UPPER_BOUND_ANALOG, kTimeoutMs);
+      hood.ConfigForwardSoftLimitEnable(true, kTimeoutMs);
+      hood.ConfigReverseSoftLimitEnable(true, kTimeoutMs);
 
       /* how much error is allowed?  This defaults to 0. */
-      hood.ConfigAllowableClosedloopError(0, 0, kTimeoutMs);
-
-      //hood.ConfigForwardSoftLimitThreshold(, kTimeoutMs);
-      //hood.ConfigReverseSoftLimitThreshold(, kTimeoutMs);
-      //hood.ConfigReverseSoftLimitEnable(true, kTimeoutMs);
-      //hood.ConfigForwardSoftLimitEnable(true, kTimeoutMs);
+      hood.ConfigAllowableClosedloopError(0, 1, kTimeoutMs);
 
       //***********************
       // MAY NEED TUNING
@@ -338,7 +317,7 @@ namespace Test
       turret.Config_IntegralZone(2);
       turret.Config_kP(0, 10f, kTimeoutMs); // tweak this first, a little bit of overshoot is okay
       turret.Config_kI(0, 0f, kTimeoutMs);
-      turret.Config_kD(0, 1f, kTimeoutMs);
+      turret.Config_kD(0, 3f, kTimeoutMs);
       turret.Config_kF(0, 0f, kTimeoutMs);
       // use slot0 for closed-looping
       turret.SelectProfileSlot(0, 0);
@@ -348,9 +327,13 @@ namespace Test
       turret.ConfigNominalOutputReverse(0.0f, kTimeoutMs);
       turret.ConfigPeakOutputForward(+0.5f, kTimeoutMs);
       turret.ConfigPeakOutputReverse(-0.5f, kTimeoutMs);
+      turret.ConfigReverseSoftLimitThreshold(TURRET_UPPER_BOUND_ANALOG, kTimeoutMs);
+      turret.ConfigForwardSoftLimitThreshold(TURRET_LOWER_BOUND_ANALOG, kTimeoutMs);
+      turret.ConfigReverseSoftLimitEnable(true, kTimeoutMs);
+      turret.ConfigForwardSoftLimitEnable(true, kTimeoutMs);
 
       // how much error is allowed?  This defaults to 0.
-      turret.ConfigAllowableClosedloopError(1, 0, kTimeoutMs);
+      turret.ConfigAllowableClosedloopError(0, 1, kTimeoutMs);
 
       // Shooter
       shooterSensorTalon.ConfigSelectedFeedbackSensor(FeedbackDevice.CTRE_MagEncoder_Relative, 0, kTimeoutMs);
