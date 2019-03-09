@@ -102,7 +102,7 @@ namespace Test
           Hood();
           Turret();
 
-          Debug.Print("H: " + getHoodAngle() + " T: " + getTurretAngle() + " SV: " + getShooterRPM());
+          Debug.Print("H: " + getHoodAngle() + " T: " + getTurretAngle() + " SV: " + getShooterRPM() + " SVT: " + shooterRPMTarget);
         }
 
         Thread.Sleep(10);
@@ -193,7 +193,10 @@ namespace Test
         appVoltage = 0;
       }
       // Voltage compensation
-      shooterVESC.Set(appVoltage);
+      float voltageDiff = appVoltage - shooterVESC.Get();
+      // Ramp is 1 volt per 20 ms
+      voltageDiff = (float) System.Math.Min(voltageDiff, 1 / 0.02f / 48f);
+      shooterVESC.Set(shooterVESC.Get() + voltageDiff);
     }
 
     static float hoodSetpoint = 60f;
@@ -315,7 +318,7 @@ namespace Test
       turret.ConfigSelectedFeedbackSensor(FeedbackDevice.Analog, 0, kTimeoutMs);
       turret.SetSensorPhase(true);
       turret.Config_IntegralZone(2);
-      turret.Config_kP(0, 10f, kTimeoutMs); // tweak this first, a little bit of overshoot is okay
+      turret.Config_kP(0, 7.5f, kTimeoutMs); // tweak this first, a little bit of overshoot is okay
       turret.Config_kI(0, 0f, kTimeoutMs);
       turret.Config_kD(0, 3f, kTimeoutMs);
       turret.Config_kF(0, 0f, kTimeoutMs);
@@ -333,7 +336,7 @@ namespace Test
       turret.ConfigForwardSoftLimitEnable(true, kTimeoutMs);
 
       // how much error is allowed?  This defaults to 0.
-      turret.ConfigAllowableClosedloopError(0, 1, kTimeoutMs);
+      turret.ConfigAllowableClosedloopError(0, 2, kTimeoutMs);
 
       // Shooter
       shooterSensorTalon.ConfigSelectedFeedbackSensor(FeedbackDevice.CTRE_MagEncoder_Relative, 0, kTimeoutMs);
