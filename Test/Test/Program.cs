@@ -16,7 +16,7 @@ namespace Test
     const float intakeSpeed = 0.35f;
     const float feederSpeed = 1f;
     const float hoodSpeed = 0.4f;
-    const float turretSpeed = 0.4f;
+    const float turretSpeed = 0.2f;
     const float driveSpeed = 0.8f;
     const float turnSpeed = 0.6f;
     
@@ -33,10 +33,10 @@ namespace Test
     const int HOOD_UPPER_BOUND_ANGLE = 0; // degrees- when hood is all the way out - lowest angle shot
 
     // Turret characteristics
-    const int TURRET_LOWER_BOUND_ANALOG = 0; // todo adjust these
-    const int TURRET_UPPER_BOUND_ANALOG = 1023;
-    const int TURRET_LOWER_BOUND_ANGLE = -35; // degrees- when turret is all the way right
-    const int TURRET_UPPER_BOUND_ANGLE = 35; // degrees- when turret is all the way left
+    const int TURRET_LOWER_BOUND_ANALOG = 570; // todo adjust these
+    const int TURRET_UPPER_BOUND_ANALOG = 700;
+    const int TURRET_LOWER_BOUND_ANGLE = -26; // degrees- when turret is all the way right
+    const int TURRET_UPPER_BOUND_ANGLE = 17; // degrees- when turret is all the way left
 
     const int kTimeoutMs = 30;
     static float filteredBasketAngle;
@@ -93,9 +93,9 @@ namespace Test
 
           //Drive();
           //Camera();
-          Intake();
-          Feeder();
-          Shooter();
+          //Intake();
+          //Feeder();
+          //Shooter();
           Hood();
           Turret();
         }
@@ -207,7 +207,7 @@ namespace Test
       }
       else if (gamepad.GetButton((uint)EBut.Y))
       {
-        if(hood.GetSelectedSensorPosition(0) < 50)
+        if (hood.GetSelectedSensorPosition(0) < 50)
         {
           hood.Set(ControlMode.Position, 50);
         }
@@ -222,37 +222,41 @@ namespace Test
       }
     }
 
+    static int turretTarget = -472;
     static void Turret()
     {
+      if (turret.GetSelectedSensorPosition(0) > -370)
+      {
+        turret.Set(ControlMode.Position, -370);
+      }
+
+      if (turret.GetSelectedSensorPosition(0) < -495)
+      {
+        turret.Set(ControlMode.Position, -495);
+      }
+
       // Buttons are toggles
       if (gamepad.GetButton((uint)EBut.X))
       {
-        if (turret.GetSelectedSensorPosition(0) < 390)
-        {
-          turret.Set(ControlMode.PercentOutput, 0);
-        }
-        else
-        {
-          turret.Set(ControlMode.PercentOutput, turretSpeed);
-        }
+        turretTarget -= 1;
       }
       else if (gamepad.GetButton((uint)EBut.B))
       {
-        if (turret.GetSelectedSensorPosition(0) > 425)
-        {
-          turret.Set(ControlMode.PercentOutput, 0);
-        }
-        else
-        {
-          turret.Set(ControlMode.PercentOutput, -1 * turretSpeed);
-        }
+        turretTarget += 1;
       }
       else
       {
-        turret.Set(ControlMode.PercentOutput, 0);
+        turretTarget += 0;
+        //turret.Set(ControlMode.PercentOutput, 0);
       }
 
-      //Debug.Print("Turret Pos:" + turret.GetSelectedSensorPosition(0).ToString());
+      turret.Set(ControlMode.Position, turretTarget);
+
+      //  turret.Set(ControlMode.Position, turretTarget);
+      //}
+      Debug.Print(turretTarget.ToString());
+      //Debug.Print("Turret angle: " + getTurretAngle().ToString());
+      Debug.Print("Turret Pos:" + turret.GetSelectedSensorPosition(0).ToString());
     }
 
     static void AdjustShooterSpeed()
@@ -330,10 +334,11 @@ namespace Test
       //***********************
       // Turret
       turret.ConfigSelectedFeedbackSensor(FeedbackDevice.Analog, 0, kTimeoutMs);
-      turret.SetSensorPhase(false);
-      turret.Config_kP(0, 30f, kTimeoutMs); // tweak this first, a little bit of overshoot is okay
-      turret.Config_kI(0, 0.0005f, kTimeoutMs);
-      turret.Config_kD(0, 0f, kTimeoutMs);
+      turret.SetSensorPhase(true);
+      turret.Config_IntegralZone(2);
+      turret.Config_kP(0, 10f, kTimeoutMs); // tweak this first, a little bit of overshoot is okay
+      turret.Config_kI(0, 0f, kTimeoutMs);
+      turret.Config_kD(0, 1f, kTimeoutMs);
       turret.Config_kF(0, 0f, kTimeoutMs);
       // use slot0 for closed-looping
       turret.SelectProfileSlot(0, 0);
@@ -341,11 +346,11 @@ namespace Test
       // set the peak and nominal outputs, 1.0 means full
       turret.ConfigNominalOutputForward(0.0f, kTimeoutMs);
       turret.ConfigNominalOutputReverse(0.0f, kTimeoutMs);
-      turret.ConfigPeakOutputForward(+1.0f, kTimeoutMs);
-      turret.ConfigPeakOutputReverse(-1.0f, kTimeoutMs);
+      turret.ConfigPeakOutputForward(+0.5f, kTimeoutMs);
+      turret.ConfigPeakOutputReverse(-0.5f, kTimeoutMs);
 
       // how much error is allowed?  This defaults to 0.
-      turret.ConfigAllowableClosedloopError(0, 0, kTimeoutMs);
+      turret.ConfigAllowableClosedloopError(1, 0, kTimeoutMs);
 
       // Shooter
       shooterSensorTalon.ConfigSelectedFeedbackSensor(FeedbackDevice.CTRE_MagEncoder_Relative, 0, kTimeoutMs);
