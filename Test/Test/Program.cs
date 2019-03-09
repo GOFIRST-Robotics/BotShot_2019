@@ -28,22 +28,23 @@ namespace Test
 
     // Hood characteristics
     const int HOOD_LOWER_BOUND_ANALOG = 0; // todo adjust these
-    const int HOOD_UPPER_BOUND_ANALOG = 4095;
+    const int HOOD_UPPER_BOUND_ANALOG = 1023;
     const int HOOD_LOWER_BOUND_ANGLE = 90; // degrees- when hood is in lowest position (ie all the way in)
     const int HOOD_UPPER_BOUND_ANGLE = 0; // degrees- when hood is all the way out - lowest angle shot
 
     // Turret characteristics
     const int TURRET_LOWER_BOUND_ANALOG = 0; // todo adjust these
-    const int TURRET_UPPER_BOUND_ANALOG = 4095;
+    const int TURRET_UPPER_BOUND_ANALOG = 1023;
     const int TURRET_LOWER_BOUND_ANGLE = -35; // degrees- when turret is all the way right
     const int TURRET_UPPER_BOUND_ANGLE = 35; // degrees- when turret is all the way left
 
     const int kTimeoutMs = 30;
-    static Queue basketAngleBuffer = new Queue();
-    static Queue basketDistanceBuffer = new Queue();
     static float filteredBasketAngle;
     static short filteredBasketDistance;
     static bool shooterAdjustLockout;
+
+    static float hoodTargetAngle;
+    static float turretTargetAngle;
 
     enum EBut : uint
     {
@@ -185,9 +186,7 @@ namespace Test
       }
       // Voltage compensation
       shooterVESC.Set(appVoltage / 48f);
-
-      //Debug.Print("Rpm: " + rpm.ToString());
-
+      
       Debug.Print("H: " + hood.GetSelectedSensorPosition(0).ToString() + " V: " + shooterRPM +
                     " T: " + shooterRPMTarget);
     }
@@ -287,13 +286,6 @@ namespace Test
       // Serial port
       _uart = new System.IO.Ports.SerialPort(CTRE.HERO.IO.Port1.UART, 115200);
       _uart.Open();
-
-      // Init queues
-      for (int i = 0; i < 30; i++)
-      {
-        basketAngleBuffer.Enqueue(0);
-        basketDistanceBuffer.Enqueue(0);
-      }
 
       // Victor SPX Slaves
       // Left Slave
@@ -395,29 +387,7 @@ namespace Test
               ushort distance = BitConverter.ToUInt16(_rx, packetOfs);
               short angle = BitConverter.ToInt16(_rx, packetOfs + 2);
               float rangle = ((float)angle) / 10f; // Angle is multiplied by 10 on pi to be sent over wire
-              if (rangle != 0)
-              {
-                basketAngleBuffer.Enqueue(rangle);
-                basketAngleBuffer.Dequeue();
-
-                basketDistanceBuffer.Enqueue(distance);
-                basketDistanceBuffer.Dequeue();
-
-                // Use moving average filter to filter angle and distance
-                float sumAngle = 0;
-                foreach (float f in basketAngleBuffer.ToArray())
-                {
-                  sumAngle += f;
-                }
-                filteredBasketAngle = sumAngle / basketAngleBuffer.Count;
-
-                int sumDist = 0;
-                foreach (short f in basketDistanceBuffer.ToArray())
-                {
-                  sumDist += f;
-                }
-                filteredBasketDistance = (short) (sumDist / basketAngleBuffer.Count);
-              }
+              
 
               Debug.Print("Camera says: " + distance + " in @ " + rangle + "deg");
             }
