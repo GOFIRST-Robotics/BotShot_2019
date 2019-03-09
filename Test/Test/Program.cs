@@ -95,9 +95,9 @@ namespace Test
           //Camera();
           //Intake();
           //Feeder();
-          //Shooter();
-          Hood();
-          Turret();
+          Shooter();
+          //Hood();
+          //Turret();
         }
 
         Thread.Sleep(10);
@@ -178,14 +178,14 @@ namespace Test
       if (gamepad.GetButton((uint)EBut.RT))
       {
         shooterRPMTarget = (float) System.Math.Min(shooterRPMTarget, SHOOTER_RPM_LIMIT);
-        appVoltage = shooterRPMTarget / SHOOTER_MOTOR_KV + (shooterRPMTarget - shooterRPM) * SHOOTER_kP;
+        appVoltage = shooterRPMTarget / SHOOTER_RPM_LIMIT;// + (shooterRPMTarget - shooterRPM) * SHOOTER_kP;
       }
       else
       {
         appVoltage = 0;
       }
       // Voltage compensation
-      shooterVESC.Set(appVoltage / 48f);
+      shooterVESC.Set(appVoltage);
       
       Debug.Print("H: " + hood.GetSelectedSensorPosition(0).ToString() + " V: " + shooterRPM +
                     " T: " + shooterRPMTarget);
@@ -416,7 +416,7 @@ namespace Test
       int talonVel = shooterSensorTalon.GetSelectedSensorVelocity(); // ticks/decisecond
       float shooterRPS = talonVel / 1023f * 10f; // 1023 ticks/rev, 10 deciseconds / second
       float shooterRPM = shooterRPS * 60;
-      return shooterRPM;
+      return -shooterRPM/2f; // Talon sensor returns opposite (twice for some reason) velocity
     }
 
     static float getHoodAngle()
