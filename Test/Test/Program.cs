@@ -40,15 +40,16 @@ namespace Test
         const int TURRET_UPPER_BOUND_ANGLE = 20; // degrees- when turret is all the way left
 
         const int kTimeoutMs = 30;
-        static float filteredBasketAngle;
-        static short filteredBasketDistance;
+        // This is a stupid queue
+        // Don't worry about it
+        static bool hasNewVisionData = false;
+        static float visionAngleQueue;
         static bool shooterAdjustLockout;
         static bool turretAdjustLockout;
 
         static bool isIntaking = false;
 
-        static float hoodTargetAngle;
-        static float turretTargetAngle;
+        static int ledRelayPort = 7;
 
         enum EBut : uint
         {
@@ -105,6 +106,7 @@ namespace Test
                     Shooter();
                     Hood();
                     Turret();
+                    AcquireTarget();
 
                     Debug.Print("H: " + getHoodAngle() + " T: " + getTurretAngle() + " SV: " + getShooterRPM() + " SVT: " + shooterRPMTarget);
                 }
@@ -188,6 +190,14 @@ namespace Test
             {
                 appVoltage = 0;
             }
+            if (appVoltage == 0)
+            {
+                shooterVESC.Disable();
+            }
+            else
+            {
+                shooterVESC.Enable();
+            }
             shooterVESC.Set(appVoltage);
         }
 
@@ -237,13 +247,86 @@ namespace Test
             }
         }
 
+        static int acqTargetState = 0;
+        static float angleFilterSum = 0;
+        static int filterCounter = 0;
+        static long timeStart;
+        static void AcquireTarget()
+        {
+            if (gamepad.GetButton((uint)EBut.LT))
+            {
+                if (acqTargetState == 0)
+                {
+                    angleFilterSum = 0;
+                    filterCounter = 0;
+                    timeStart = getMS();
+                    acqTargetState = 1;
+                    pcm.SetSolenoidOutput(ledRelayPort, true);
+                }
+                else if (acqTargetState == 1 && getMS() - timeStart > 50)
+                {
+                    acqTargetState = 2;
+                }
+                else if (acqTargetState == 2)
+                {
+                    if (hasNewVisionData)
+                    {
+                        filterCounter++;
+                        angleFilterSum += visionAngleQueue;
+                    }
+                    if (getMS() - timeStart > 1000)
+                    {
+                        if (filterCounter == 0)
+                        {
+                            acqTargetState = 10;
+                        }
+                        else
+                        {
+                            acqTargetState = 3;
+                            turretTarget = angleFilterSum / filterCounter;
+                        }
+                    }
+                }
+                else if (acqTargetState == 3 && getMS() - timeStart > 1300)
+                {
+                    acqTargetState = 4;
+                    pcm.SetSolenoidOutput(ledRelayPort, false);
+                }
+                else if (acqTargetState == 4 && getMS() - timeStart > 1350)
+                {
+                    acqTargetState = 5;
+                    pcm.SetSolenoidOutput(ledRelayPort, true);
+                }
+                else if (acqTargetState == 5 && getMS() - timeStart > 1400)
+                {
+                    pcm.SetSolenoidOutput(ledRelayPort, false);
+                    acqTargetState = 6; // Done state
+                }
+                else if (acqTargetState >= 10 && acqTargetState <= 20)
+                {
+                    pcm.SetSolenoidOutput(ledRelayPort, acqTargetState % 2 == 0);
+                    if (getMS() - timeStart > 50)
+                    {
+                        acqTargetState++;
+                        timeStart = 0;
+                    }
+
+                }
+            }
+            else
+            {
+                acqTargetState = 0;
+                pcm.SetSolenoidOutput(ledRelayPort, false);
+            }
+        }
+
         static void AdjustShooterSpeed()
         {
             if (gamepad.GetButton((uint)EBut.SELECT))
             {
                 if (!shooterAdjustLockout)
                 {
-                    shooterRPMTarget += 100;
+                    shooterRPMTarget += 50;
                     shooterAdjustLockout = true;
                 }
             }
@@ -251,7 +334,7 @@ namespace Test
             {
                 if (!shooterAdjustLockout)
                 {
-                    shooterRPMTarget -= 100;
+                    shooterRPMTarget -= 50;
                     shooterAdjustLockout = true;
                 }
             }
@@ -341,7 +424,7 @@ namespace Test
             shooterVESC = new PWMSpeedController(CTRE.HERO.IO.Port3.PWM_Pin7);
             shooterVESC.Set(0);
 
-            pcm.SetSolenoidOutput(7, true);
+            pcm.SetSolenoidOutput(ledRelayPort, false);
         }
 
         static void Camera()
@@ -426,6 +509,11 @@ namespace Test
             int sensorPos = (int)linRelate(angle, TURRET_LOWER_BOUND_ANGLE, TURRET_UPPER_BOUND_ANGLE,
                                             TURRET_LOWER_BOUND_ANALOG, TURRET_UPPER_BOUND_ANALOG);
             turret.Set(ControlMode.Position, sensorPos);
+        }
+
+        static long getMS()
+        {
+            return DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
         }
 
     }
