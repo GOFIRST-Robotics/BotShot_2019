@@ -27,8 +27,8 @@ namespace Test
         const float SHOOTER_MOTOR_KV = 125; // [RPM]/[V]
 
         // Hood characteristics
-        const int HOOD_LOWER_BOUND_ANALOG = 514;
-        const int HOOD_UPPER_BOUND_ANALOG = 162;
+        const int HOOD_LOWER_BOUND_ANALOG = 632;
+        const int HOOD_UPPER_BOUND_ANALOG = 278;
         const int HOOD_LOWER_BOUND_ANGLE = 0; // degrees- when hood is in lowest position (ie all the way in)
         const int HOOD_UPPER_BOUND_ANGLE = 60; // degrees- when hood is all the way out - lowest angle shot
 
@@ -99,10 +99,10 @@ namespace Test
                 {
                     CTRE.Phoenix.Watchdog.Feed();
 
-                    //Drive();
+                    Drive();
                     Camera();
                     Intake();
-                    //Feeder();
+                    Feeder();
                     Shooter();
                     Hood();
                     Turret();
@@ -148,14 +148,21 @@ namespace Test
 
         static void Feeder()
         {
-            // Buttons are toggles
-            if (gamepad.GetButton((uint)EBut.RB))
+            if (isIntaking)
             {
-                feederR.Set(ControlMode.PercentOutput, feederSpeed);
+                feederR.Set(ControlMode.PercentOutput, -0.1);
             }
             else
             {
-                feederR.Set(ControlMode.PercentOutput, 0);
+                // Buttons are toggles
+                if (gamepad.GetButton((uint)EBut.RB))
+                {
+                    feederR.Set(ControlMode.PercentOutput, feederSpeed);
+                }
+                else
+                {
+                    feederR.Set(ControlMode.PercentOutput, 0);
+                }
             }
         }
 
@@ -273,6 +280,7 @@ namespace Test
                     {
                         filterCounter++;
                         angleFilterSum += visionAngleQueue;
+                        hasNewVisionData = false;
                     }
                     if (getMS() - timeStart > 1000)
                     {
@@ -283,7 +291,7 @@ namespace Test
                         else
                         {
                             acqTargetState = 3;
-                            turretTarget = angleFilterSum / filterCounter;
+                            turretTarget = getTurretAngle() + angleFilterSum / filterCounter;
                         }
                     }
                 }
@@ -292,18 +300,19 @@ namespace Test
                     acqTargetState = 4;
                     pcm.SetSolenoidOutput(ledRelayPort, false);
                 }
-                else if (acqTargetState == 4 && getMS() - timeStart > 1350)
+                else if (acqTargetState == 4 && getMS() - timeStart > 1400)
                 {
                     acqTargetState = 5;
                     pcm.SetSolenoidOutput(ledRelayPort, true);
                 }
-                else if (acqTargetState == 5 && getMS() - timeStart > 1400)
+                else if (acqTargetState == 5 && getMS() - timeStart > 1500)
                 {
                     pcm.SetSolenoidOutput(ledRelayPort, false);
                     acqTargetState = 6; // Done state
                 }
                 else if (acqTargetState >= 10 && acqTargetState <= 20)
                 {
+                    // State >= 10 is when we don't see the target and need to indicate that
                     pcm.SetSolenoidOutput(ledRelayPort, acqTargetState % 2 == 0);
                     if (getMS() - timeStart > 50)
                     {
@@ -394,7 +403,7 @@ namespace Test
             turret.ConfigSelectedFeedbackSensor(FeedbackDevice.CTRE_MagEncoder_Absolute, 1, kTimeoutMs);
             int absPos = turret.GetSelectedSensorPosition(1);
             turret.ConfigSelectedFeedbackSensor(FeedbackDevice.CTRE_MagEncoder_Relative, 0, kTimeoutMs);
-            turret.SetSelectedSensorPosition(absPos - TURRET_OFFSET, 0, kTimeoutMs);
+            turret.SetSelectedSensorPosition(0, 0, kTimeoutMs);
             turret.SetSensorPhase(true);
             turret.Config_IntegralZone(20);
             turret.Config_kP(0, 2f, kTimeoutMs); // tweak this first, a little bit of overshoot is okay
@@ -433,7 +442,8 @@ namespace Test
             if (_uart.BytesToRead >= 8)
             {
                 byte[] _rx = new byte[24];
-                int readCnt = _uart.Read(_rx, 0, _uart.BytesToRead);
+                
+                int readCnt = _uart.Read(_rx, 0, (int)System.Math.Min(_uart.BytesToRead, 24));
                 int zeroCount = 0;
 
                 // Each packet is four null bytes followed by the data
@@ -456,10 +466,11 @@ namespace Test
                         int packetOfs = i + 1;
                         if (readCnt - packetOfs >= 4)
                         {
-                            ushort distance = BitConverter.ToUInt16(_rx, packetOfs);
-                            short angle = BitConverter.ToInt16(_rx, packetOfs + 2);
+                            short angle = BitConverter.ToInt16(_rx, packetOfs);
+                            ushort distance = BitConverter.ToUInt16(_rx, packetOfs + 2);
                             float rangle = ((float)angle) / 10f; // Angle is multiplied by 10 on pi to be sent over wire
-
+                            hasNewVisionData = true;
+                            visionAngleQueue = rangle;
 
                             Debug.Print("Camera says: " + distance + " in @ " + rangle + "deg");
                         }
@@ -480,7 +491,7 @@ namespace Test
 
         static float getShooterRPM()
         {
-            return shooterSensorTalon.GetSelectedSensorVelocity() / 60f;
+            return shooterSensorTalon.GetSelectedSensorVelocity() / (10f*4096f) * 6000f;
         }
 
         static float getHoodAngle()
@@ -506,6 +517,14 @@ namespace Test
 
         static void setTurretAngle(float angle)
         {
+            if (angle > TURRET_UPPER_BOUND_ANGLE)
+            {
+                angle = TURRET_UPPER_BOUND_ANGLE;
+            }
+            else if (angle < TURRET_LOWER_BOUND_ANGLE)
+            {
+                angle = TURRET_LOWER_BOUND_ANGLE;
+            }
             int sensorPos = (int)linRelate(angle, TURRET_LOWER_BOUND_ANGLE, TURRET_UPPER_BOUND_ANGLE,
                                             TURRET_LOWER_BOUND_ANALOG, TURRET_UPPER_BOUND_ANALOG);
             turret.Set(ControlMode.Position, sensorPos);
