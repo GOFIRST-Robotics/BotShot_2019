@@ -27,13 +27,13 @@ namespace Test
     const float SHOOTER_MOTOR_KV = 125; // [RPM]/[V]
 
     // Hood characteristics
-    const int HOOD_LOWER_BOUND_ANALOG = 350; // todo adjust these
-    const int HOOD_UPPER_BOUND_ANALOG = 48;
-    const int HOOD_LOWER_BOUND_ANGLE = 85; // degrees- when hood is in lowest position (ie all the way in)
-    const int HOOD_UPPER_BOUND_ANGLE = 45; // degrees- when hood is all the way out - lowest angle shot
+    const int HOOD_LOWER_BOUND_ANALOG = 514; 
+    const int HOOD_UPPER_BOUND_ANALOG = 162;
+    const int HOOD_LOWER_BOUND_ANGLE = 0; // degrees- when hood is in lowest position (ie all the way in)
+    const int HOOD_UPPER_BOUND_ANGLE = 60; // degrees- when hood is all the way out - lowest angle shot
 
     // Turret characteristics
-    const int TURRET_OFFSET = 400; // Zero position of absolute encoder
+    const int TURRET_OFFSET = 1483;
     const int TURRET_LOWER_BOUND_ANALOG = 2048; // todo adjust these
     const int TURRET_UPPER_BOUND_ANALOG = -2048;
     const int TURRET_LOWER_BOUND_ANGLE = -20; // degrees- when turret is all the way right
@@ -85,6 +85,9 @@ namespace Test
     static PWMSpeedController shooterVESC;
     static float shooterRPMTarget = 0;
 
+    // PCM for light ring control
+    static PneumaticControlModule pcm = new PneumaticControlModule(0);
+
     public static void Main()
     {
       Initialize();
@@ -96,7 +99,7 @@ namespace Test
           CTRE.Phoenix.Watchdog.Feed();
 
           //Drive();
-          //Camera();
+          Camera();
           Intake();
           //Feeder();
           Shooter();
@@ -148,10 +151,6 @@ namespace Test
       {
         feederR.Set(ControlMode.PercentOutput, feederSpeed);
       }
-      else if (gamepad.GetButton(11))
-      {
-        feederR.Set(ControlMode.PercentOutput, -1 * feederSpeed);
-      }
       else
       {
         feederR.Set(ControlMode.PercentOutput, 0);
@@ -166,10 +165,6 @@ namespace Test
         intakeRgt.Set(ControlMode.PercentOutput, intakeSpeed);
         setTurretAngle(0);
         isIntaking = true;
-      }
-      else if (gamepad.GetButton(11))
-      {
-        intakeRgt.Set(ControlMode.PercentOutput, -1 * intakeSpeed);
       }
       else
       {
@@ -196,7 +191,7 @@ namespace Test
       shooterVESC.Set(appVoltage);
     }
 
-    static float hoodSetpoint = 60f;
+    static float hoodSetpoint = 45f;
     static void Hood()
     {
       // Buttons are toggles
@@ -307,16 +302,16 @@ namespace Test
       hood.ConfigReverseSoftLimitEnable(true, kTimeoutMs);
 
       /* how much error is allowed?  This defaults to 0. */
-      hood.ConfigAllowableClosedloopError(0, 1, kTimeoutMs);
+      hood.ConfigAllowableClosedloopError(0, 2, kTimeoutMs);
 
       //***********************
       // MAY NEED TUNING
       //***********************
       // Turret
-      turret.ConfigSelectedFeedbackSensor(FeedbackDevice.CTRE_MagEncoder_Absolute, 0, kTimeoutMs);
-      int sensorPos = turret.GetSelectedSensorPosition(0);
+      turret.ConfigSelectedFeedbackSensor(FeedbackDevice.CTRE_MagEncoder_Absolute, 1, kTimeoutMs);
+      int absPos = turret.GetSelectedSensorPosition(1);
       turret.ConfigSelectedFeedbackSensor(FeedbackDevice.CTRE_MagEncoder_Relative, 0, kTimeoutMs);
-      turret.SetSelectedSensorPosition(sensorPos - TURRET_OFFSET, 0, kTimeoutMs);
+      turret.SetSelectedSensorPosition(absPos - TURRET_OFFSET, 0, kTimeoutMs);
       turret.SetSensorPhase(true);
       turret.Config_IntegralZone(20);
       turret.Config_kP(0, 2f, kTimeoutMs); // tweak this first, a little bit of overshoot is okay
@@ -345,6 +340,8 @@ namespace Test
 
       shooterVESC = new PWMSpeedController(CTRE.HERO.IO.Port3.PWM_Pin7);
       shooterVESC.Set(0);
+
+      pcm.SetSolenoidOutput(7, true);
     }
 
     static void Camera()
@@ -413,9 +410,8 @@ namespace Test
     static float getTurretAngle()
     {
       int sensorPos = turret.GetSelectedSensorPosition();
-      return sensorPos;
-      /*return linRelate(sensorPos, TURRET_LOWER_BOUND_ANALOG, TURRET_UPPER_BOUND_ANALOG,
-                       TURRET_LOWER_BOUND_ANGLE, TURRET_UPPER_BOUND_ANGLE);*/
+      return linRelate(sensorPos, TURRET_LOWER_BOUND_ANALOG, TURRET_UPPER_BOUND_ANALOG,
+                       TURRET_LOWER_BOUND_ANGLE, TURRET_UPPER_BOUND_ANGLE);
     }
 
     static void setHoodAngle(float angle)
