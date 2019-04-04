@@ -20,11 +20,9 @@ namespace Test
         const float driveSpeed = 0.8f;
         const float turnSpeed = 0.6f;
 
-        const float SHOOTER_RPM_LIMIT = 6000f; // [RPM] at shooter wheels
-        const float SHOOTER_kP = 48f / 7500f; // [V]/[RPM error at shooter wheels]
-
-        // Shooter characteristics
-        const float SHOOTER_MOTOR_KV = 125; // [RPM]/[V]
+        const float SHOOTER_RPM_LIMIT = 3850f; // [RPM] at shooter wheels
+        const float SHOOTER_kP = 6f / 1930f; // [percentVbus]/[RPM error at shooter wheels]
+        const float SHOOTER_KFF = 0.5f / 1930f;
 
         // Hood characteristics
         const int HOOD_LOWER_BOUND_ANALOG = 632;
@@ -47,8 +45,6 @@ namespace Test
         static ushort visionDistQueue;
         static bool shooterAdjustLockout;
         static bool turretAdjustLockout;
-
-        static float shooterCloseLoopTarget = 0;
 
         static bool isIntaking = false;
 
@@ -190,21 +186,16 @@ namespace Test
             if (gamepad.GetButton((uint)EBut.RT))
             {
                 shooterRPMTarget = (float)System.Math.Min(shooterRPMTarget, SHOOTER_RPM_LIMIT);
-                appVoltage = shooterRPMTarget / SHOOTER_RPM_LIMIT;// + (shooterRPMTarget - shooterRPM) * SHOOTER_kP;
+                appVoltage = shooterRPMTarget * SHOOTER_KFF + (shooterRPMTarget - shooterRPM) * SHOOTER_kP;
+                appVoltage = (float)System.Math.Min(System.Math.Max(0.0f, appVoltage), 1f);
+                shooterVESC.Set(appVoltage);
+                shooterVESC.Enable();
             }
             else
-            {
-                appVoltage = 0;
-            }
-            if (appVoltage == 0)
             {
                 shooterVESC.Disable();
             }
-            else
-            {
-                shooterVESC.Enable();
-            }
-            shooterVESC.Set(appVoltage);
+            
         }
 
         static float hoodSetpoint = 45f;
@@ -400,7 +391,7 @@ namespace Test
             hood.ConfigReverseSoftLimitEnable(true, kTimeoutMs);
 
             /* how much error is allowed?  This defaults to 0. */
-            hood.ConfigAllowableClosedloopError(0, 2, kTimeoutMs);
+            hood.ConfigAllowableClosedloopError(0, 5, kTimeoutMs);
 
             //***********************
             // MAY NEED TUNING
@@ -547,11 +538,11 @@ namespace Test
 
         static void setHoodAngleAndSpeed(float distanceIn)
         {
-            float robotDist = distanceIn - 24; // todo measure this- front to camera
+            float robotDist = distanceIn - 30; // todo measure this- front to camera
             float hoodAngle = 0.1881f * robotDist + 2.719f;
             float targetSpeed = 2938f + 15.07f * robotDist - 76.09f * hoodAngle + 0.046f * robotDist * robotDist - 0.741f * robotDist * hoodAngle + 2.788f * hoodAngle * hoodAngle;
             hoodSetpoint = hoodAngle;
-            shooterCloseLoopTarget = targetSpeed;
+            shooterRPMTarget = targetSpeed;
         }
     }
 }
