@@ -44,12 +44,13 @@ namespace Test
         // Don't worry about it
         static bool hasNewVisionData = false;
         static float visionAngleQueue;
+        static ushort visionDistQueue;
         static bool shooterAdjustLockout;
         static bool turretAdjustLockout;
 
-        static bool isIntaking = false;
+        static float shooterCloseLoopTarget = 0;
 
-        static int ledRelayPort = 7;
+        static bool isIntaking = false;
 
         enum EBut : uint
         {
@@ -65,7 +66,7 @@ namespace Test
         // Initialize Talon SRX Objects
         static TalonSRX hood = new TalonSRX(7); // Hood positional
         static TalonSRX turret = new TalonSRX(6); // Turret positional
-        static TalonSRX shooterSensorTalon = new TalonSRX(4); // Shooter velocity reader
+        static TalonSRX shooterSensorTalon = new TalonSRX(4); // Shooter velocity reader (also used for ring lights)
         static TalonSRX intakeLft = new TalonSRX(3);  // Intake R1 button
         static TalonSRX intakeRgt = new TalonSRX(2);  // Intake L0 button
         static TalonSRX feederL = new TalonSRX(1); // Feeder R1 button
@@ -85,9 +86,7 @@ namespace Test
         // Andrew- add SPOT.Hardware.PWM to your references
         static PWMSpeedController shooterVESC;
         static float shooterRPMTarget = 0;
-
-        // PCM for light ring control
-        static PneumaticControlModule pcm = new PneumaticControlModule(0);
+       
 
         public static void Main()
         {
@@ -108,7 +107,7 @@ namespace Test
                     Turret();
                     AcquireTarget();
 
-                    Debug.Print("H: " + getHoodAngle() + " T: " + getTurretAngle() + " SV: " + getShooterRPM() + " SVT: " + shooterRPMTarget);
+                    Debug.Print("H: " + getHoodAngle() + " T: " + getTurretAngle() +"(" + turretTarget +") SV: " + getShooterRPM() + " SVT: " + shooterRPMTarget);
                 }
 
                 Thread.Sleep(10);
@@ -256,6 +255,7 @@ namespace Test
 
         static int acqTargetState = 0;
         static float angleFilterSum = 0;
+        static float distanceFilterSum = 0;
         static int filterCounter = 0;
         static long timeStart;
         static void AcquireTarget()
@@ -265,10 +265,11 @@ namespace Test
                 if (acqTargetState == 0)
                 {
                     angleFilterSum = 0;
+                    distanceFilterSum = 0;
                     filterCounter = 0;
                     timeStart = getMS();
                     acqTargetState = 1;
-                    pcm.SetSolenoidOutput(ledRelayPort, true);
+                    shooterSensorTalon.Set(ControlMode.PercentOutput, 1.0);
                 }
                 else if (acqTargetState == 1 && getMS() - timeStart > 50)
                 {
@@ -280,6 +281,7 @@ namespace Test
                     {
                         filterCounter++;
                         angleFilterSum += visionAngleQueue;
+                        distanceFilterSum += (float)visionDistQueue;
                         hasNewVisionData = false;
                     }
                     if (getMS() - timeStart > 1000)
@@ -292,28 +294,32 @@ namespace Test
                         {
                             acqTargetState = 3;
                             turretTarget = getTurretAngle() + angleFilterSum / filterCounter;
+                            float actualDist = distanceFilterSum / filterCounter;
+
+                            // Apply model
+                            setHoodAngleAndSpeed(actualDist);
                         }
                     }
                 }
                 else if (acqTargetState == 3 && getMS() - timeStart > 1300)
                 {
                     acqTargetState = 4;
-                    pcm.SetSolenoidOutput(ledRelayPort, false);
+                    shooterSensorTalon.Set(ControlMode.PercentOutput, 0.0);
                 }
                 else if (acqTargetState == 4 && getMS() - timeStart > 1400)
                 {
                     acqTargetState = 5;
-                    pcm.SetSolenoidOutput(ledRelayPort, true);
+                    shooterSensorTalon.Set(ControlMode.PercentOutput, 1.0);
                 }
                 else if (acqTargetState == 5 && getMS() - timeStart > 1500)
                 {
-                    pcm.SetSolenoidOutput(ledRelayPort, false);
+                    shooterSensorTalon.Set(ControlMode.PercentOutput, 0.0);
                     acqTargetState = 6; // Done state
                 }
                 else if (acqTargetState >= 10 && acqTargetState <= 20)
                 {
                     // State >= 10 is when we don't see the target and need to indicate that
-                    pcm.SetSolenoidOutput(ledRelayPort, acqTargetState % 2 == 0);
+                    shooterSensorTalon.Set(ControlMode.PercentOutput, acqTargetState %2 == 0 ? 1.0 : 0.0);
                     if (getMS() - timeStart > 50)
                     {
                         acqTargetState++;
@@ -325,7 +331,7 @@ namespace Test
             else
             {
                 acqTargetState = 0;
-                pcm.SetSolenoidOutput(ledRelayPort, false);
+                shooterSensorTalon.Set(ControlMode.PercentOutput, 0.0);
             }
         }
 
@@ -429,11 +435,11 @@ namespace Test
             // Shooter
             shooterSensorTalon.ConfigSelectedFeedbackSensor(FeedbackDevice.CTRE_MagEncoder_Relative, 0, kTimeoutMs);
             shooterSensorTalon.SetSensorPhase(false);
+            shooterSensorTalon.ConfigPeakOutputReverse(0.0f, kTimeoutMs);
+            shooterSensorTalon.ConfigPeakOutputForward(1.0f, kTimeoutMs);
 
             shooterVESC = new PWMSpeedController(CTRE.HERO.IO.Port3.PWM_Pin7);
             shooterVESC.Set(0);
-
-            pcm.SetSolenoidOutput(ledRelayPort, false);
         }
 
         static void Camera()
@@ -469,8 +475,12 @@ namespace Test
                             short angle = BitConverter.ToInt16(_rx, packetOfs);
                             ushort distance = BitConverter.ToUInt16(_rx, packetOfs + 2);
                             float rangle = ((float)angle) / 10f; // Angle is multiplied by 10 on pi to be sent over wire
-                            hasNewVisionData = true;
-                            visionAngleQueue = rangle;
+                            if (System.Math.Abs(rangle) <= 30 && distance < 240)
+                            {
+                                hasNewVisionData = true;
+                                visionAngleQueue = rangle;
+                                visionDistQueue = distance;
+                            }
 
                             Debug.Print("Camera says: " + distance + " in @ " + rangle + "deg");
                         }
@@ -535,5 +545,13 @@ namespace Test
             return DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
         }
 
+        static void setHoodAngleAndSpeed(float distanceIn)
+        {
+            float robotDist = distanceIn - 24; // todo measure this- front to camera
+            float hoodAngle = 0.1881f * robotDist + 2.719f;
+            float targetSpeed = 2938f + 15.07f * robotDist - 76.09f * hoodAngle + 0.046f * robotDist * robotDist - 0.741f * robotDist * hoodAngle + 2.788f * hoodAngle * hoodAngle;
+            hoodSetpoint = hoodAngle;
+            shooterCloseLoopTarget = targetSpeed;
+        }
     }
 }
