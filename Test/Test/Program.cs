@@ -21,8 +21,9 @@ namespace Test
         const float turnSpeed = 0.6f;
 
         const float SHOOTER_RPM_LIMIT = 3850f; // [RPM] at shooter wheels
-        const float SHOOTER_kP = 6f / 1930f; // [percentVbus]/[RPM error at shooter wheels]
+        const float SHOOTER_kP = 10f / 1930f; // [percentVbus]/[RPM error at shooter wheels]
         const float SHOOTER_KFF = 0.5f / 1930f;
+        const float SHOOTER_MARGIN = 25f;
 
         // Hood characteristics
         const int HOOD_LOWER_BOUND_ANALOG = 632;
@@ -82,7 +83,10 @@ namespace Test
         // Andrew- add SPOT.Hardware.PWM to your references
         static PWMSpeedController shooterVESC;
         static float shooterRPMTarget = 0;
-       
+
+        // PCM for shooter speed feedback
+        static PneumaticControlModule pcm = new PneumaticControlModule(0);
+        static int shooterFeedbackLEDPort = 7;
 
         public static void Main()
         {
@@ -190,12 +194,21 @@ namespace Test
                 appVoltage = (float)System.Math.Min(System.Math.Max(0.0f, appVoltage), 1f);
                 shooterVESC.Set(appVoltage);
                 shooterVESC.Enable();
+
+                if (System.Math.Abs(shooterRPMTarget - shooterRPM) < SHOOTER_MARGIN)
+                {
+                    pcm.SetSolenoidOutput(shooterFeedbackLEDPort, true);
+                }
+                else
+                {
+                    pcm.SetSolenoidOutput(shooterFeedbackLEDPort, false);
+                }
             }
             else
             {
+                pcm.SetSolenoidOutput(shooterFeedbackLEDPort, false);
                 shooterVESC.Disable();
             }
-            
         }
 
         static float hoodSetpoint = 45f;
@@ -431,6 +444,8 @@ namespace Test
 
             shooterVESC = new PWMSpeedController(CTRE.HERO.IO.Port3.PWM_Pin7);
             shooterVESC.Set(0);
+
+            pcm.SetSolenoidOutput(shooterFeedbackLEDPort, false);
         }
 
         static void Camera()
@@ -538,7 +553,7 @@ namespace Test
 
         static void setHoodAngleAndSpeed(float distanceIn)
         {
-            float robotDist = distanceIn - 30; // todo measure this- front to camera
+            float robotDist = distanceIn - 30;
             float hoodAngle = 0.1881f * robotDist + 2.719f;
             float targetSpeed = 2938f + 15.07f * robotDist - 76.09f * hoodAngle + 0.046f * robotDist * robotDist - 0.741f * robotDist * hoodAngle + 2.788f * hoodAngle * hoodAngle;
             hoodSetpoint = hoodAngle;
