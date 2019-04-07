@@ -103,16 +103,20 @@ while True:
             dx = abs(dx)
             ratio = dx / (FRAME_SIZE_X / 2)
             angle_diff = math.atan(ratio * math.tan(math.radians(75/2)))
-            angle = dir_ * math.degrees(angle_diff)
+            angle = math.degrees(angle_diff)
 
             px_dist_left = pt_distance(top_left[0], bottom_left[0])
             px_dist_right = pt_distance(top_right[0], bottom_right[0])
             dist = dist_from_height(max(px_dist_left, px_dist_right))
             ratio = px_dist_left / px_dist_right
+
+            # good ol pythagoras
+            y = 12*10-35
+            dist = (dist**2 - y**2)**0.5
+            if not np.isreal(dist):
+                continue
             
-            print("dist {}".format(dist))
-            print("angle {}".format(angle))
-            print("ratio {}".format(ratio))
+            print("dist {} angle {}".format(dist, angle))
 
             # Draw centerline
             cv2.line(frame, (FRAME_SIZE_X//2, 0), (FRAME_SIZE_X//2, FRAME_SIZE_Y), (0,0,255), 1)

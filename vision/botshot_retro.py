@@ -12,16 +12,16 @@ class GripPipeline:
         """initializes all values to presets or None if need to be set
         """
 
-        self.__hsv_threshold_hue = [29.13669064748202, 106.27986348122869]
-        self.__hsv_threshold_saturation = [0.0, 35.24744027303754]
-        self.__hsv_threshold_value = [133.00359712230215, 255.0]
+        self.__hsv_threshold_hue = [53.40805853610632, 90.92150170648469]
+        self.__hsv_threshold_saturation = [0.0, 102.6962457337884]
+        self.__hsv_threshold_value = [154.39748201438846, 255.0]
 
         self.hsv_threshold_output = None
 
         self.__cv_dilate_src = self.hsv_threshold_output
         self.__cv_dilate_kernel = None
         self.__cv_dilate_anchor = (-1, -1)
-        self.__cv_dilate_iterations = 2.0
+        self.__cv_dilate_iterations = 4.0
         self.__cv_dilate_bordertype = cv2.BORDER_CONSTANT
         self.__cv_dilate_bordervalue = (-1)
 
@@ -30,7 +30,7 @@ class GripPipeline:
         self.__cv_erode_src = self.cv_dilate_output
         self.__cv_erode_kernel = None
         self.__cv_erode_anchor = (-1, -1)
-        self.__cv_erode_iterations = 2.0
+        self.__cv_erode_iterations = 4.0
         self.__cv_erode_bordertype = cv2.BORDER_CONSTANT
         self.__cv_erode_bordervalue = (-1)
 
@@ -46,17 +46,17 @@ class GripPipeline:
         self.convex_hulls_output = None
 
         self.__filter_contours_contours = self.convex_hulls_output
-        self.__filter_contours_min_area = 100.0
+        self.__filter_contours_min_area = 150.0
         self.__filter_contours_min_perimeter = 0.0
         self.__filter_contours_min_width = 0.0
-        self.__filter_contours_max_width = 1000.0
+        self.__filter_contours_max_width = 70.0
         self.__filter_contours_min_height = 0.0
         self.__filter_contours_max_height = 60.0
         self.__filter_contours_solidity = [0, 100]
         self.__filter_contours_max_vertices = 1000000.0
         self.__filter_contours_min_vertices = 0.0
         self.__filter_contours_min_ratio = 0.8
-        self.__filter_contours_max_ratio = 1.5
+        self.__filter_contours_max_ratio = 1.3
 
         self.filter_contours_output = None
 

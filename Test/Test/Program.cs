@@ -88,6 +88,8 @@ namespace Test
         static PneumaticControlModule pcm = new PneumaticControlModule(0);
         static int shooterFeedbackLEDPort = 7;
 
+        const int state = 0; // 0 = normal, 1 = skillshot mode, 2 = horse (distance) mode
+
         public static void Main()
         {
             Initialize();
@@ -103,9 +105,16 @@ namespace Test
                     Intake();
                     Feeder();
                     Shooter();
-                    Hood();
+                    AdjustThing();
                     Turret();
-                    AcquireTarget();
+                    if (state == 0)
+                    {
+                        AcquireTarget();
+                    }
+                    else
+                    {
+                        doFlash();
+                    }
 
                     Debug.Print("H: " + getHoodAngle() + " T: " + getTurretAngle() +"(" + turretTarget +") SV: " + getShooterRPM() + " SVT: " + shooterRPMTarget);
                 }
@@ -212,29 +221,123 @@ namespace Test
         }
 
         static float hoodSetpoint = 45f;
-        static void Hood()
+        static bool adjThingLockout = false;
+        static int skillPose = 0;
+        static int feetDist = 0;
+        static void AdjustThing()
         {
             // Buttons are toggles
             if (gamepad.GetButton((uint)EBut.A))
             {
-                hoodSetpoint += 0.5f;
+                if (!adjThingLockout)
+                {
+                    if (state == 0)
+                    {
+                        hoodSetpoint += 0.5f;
+                    }
+                    else if (state == 1)
+                    {
+                        // Skill setpoint
+                        skillPose++;
+                        setSkillshot(skillPose);
+                        flashCount(skillPose);
+                    }
+                    else if (state == 2)
+                    {
+                        feetDist++;
+                        flashCount(feetDist);
+                        setHoodAngleAndSpeed(feetDist / 12f);
+                    }
+                    adjThingLockout = true;
+                }
             }
             else if (gamepad.GetButton((uint)EBut.Y))
             {
-                hoodSetpoint -= 0.5f;
+                if (!adjThingLockout)
+                {
+                    if (state == 0)
+                    {
+                        hoodSetpoint += 0.5f;
+                    }
+                    else if (state == 1)
+                    {
+                        // Skill setpoint
+                        skillPose--;
+                        if (skillPose < 0)
+                        {
+                            skillPose = 0;
+                        }
+                        setSkillshot(skillPose);
+                        flashCount(skillPose);
+                    }
+                    else if (state == 2)
+                    {
+                        feetDist--;
+                        flashCount(feetDist);
+                        setHoodAngleAndSpeed(feetDist / 12f);
+                    }
+                    adjThingLockout = true;
+                }
+            }
+            else
+            {
+                adjThingLockout = false;
             }
             setHoodAngle(hoodSetpoint);
+        }
+
+        static void setSkillshot(int skill)
+        {
+
+        }
+
+        static void flashCount(int count)
+        {
+            ledFlashCounts = count;
+            ledFlashActive = true;
+        }
+
+        static bool ledFlashActive = false;
+        static int ledFlashCounts = 0;
+        static long flashTime = getMS();
+        static bool ledOn = false;
+        static void doFlash()
+        {
+            if (ledFlashActive)
+            {
+                long time_ = getMS();
+                if (time_ - flashTime > 100)
+                {
+                    flashTime = time_;
+                    if (ledOn)
+                    {
+                        ledOn = false;
+                        shooterSensorTalon.Set(ControlMode.PercentOutput, 0.0);
+                        if (ledFlashCounts == 0)
+                        {
+                            ledFlashActive = false;
+                        }
+                    }
+                    else
+                    {
+                        ledOn = true;
+                        shooterSensorTalon.Set(ControlMode.PercentOutput, 1.0);
+                        ledFlashCounts--;
+                    }
+                }
+            }
         }
 
         static float turretTarget = 0;
         static void Turret()
         {
+            const float adj = 1f;
             if (gamepad.GetButton((uint)EBut.X))
             {
 
                 if (!turretAdjustLockout)
                 {
-                    turretTarget -= 1f;
+                    turretTarget -= adj;
                     turretAdjustLockout = true;
                 }
             }
@@ -242,7 +345,7 @@ namespace Test
             {
                 if (!turretAdjustLockout)
                 {
-                    turretTarget += 1f;
+                    turretTarget += adj;
                     turretAdjustLockout = true;
                 }
             }
@@ -341,11 +444,12 @@ namespace Test
 
         static void AdjustShooterSpeed()
         {
+            const float adj = 25;
             if (gamepad.GetButton((uint)EBut.SELECT))
             {
                 if (!shooterAdjustLockout)
                 {
-                    shooterRPMTarget += 50;
+                    shooterRPMTarget += adj;
                     shooterAdjustLockout = true;
                 }
             }
@@ -353,7 +457,7 @@ namespace Test
             {
                 if (!shooterAdjustLockout)
                 {
-                    shooterRPMTarget -= 50;
+                    shooterRPMTarget -= adj;
                     shooterAdjustLockout = true;
                 }
             }
@@ -434,7 +538,7 @@ namespace Test
             turret.ConfigForwardSoftLimitEnable(true, kTimeoutMs);
 
             // how much error is allowed?  This defaults to 0.
-            turret.ConfigAllowableClosedloopError(0, 20, kTimeoutMs);
+            turret.ConfigAllowableClosedloopError(0, 5, kTimeoutMs);
 
             // Shooter
             shooterSensorTalon.ConfigSelectedFeedbackSensor(FeedbackDevice.CTRE_MagEncoder_Relative, 0, kTimeoutMs);
@@ -481,7 +585,7 @@ namespace Test
                             short angle = BitConverter.ToInt16(_rx, packetOfs);
                             ushort distance = BitConverter.ToUInt16(_rx, packetOfs + 2);
                             float rangle = ((float)angle) / 10f; // Angle is multiplied by 10 on pi to be sent over wire
-                            if (System.Math.Abs(rangle) <= 30 && distance < 240)
+                            if (System.Math.Abs(rangle) <= 30 && distance < 400)
                             {
                                 hasNewVisionData = true;
                                 visionAngleQueue = rangle;
