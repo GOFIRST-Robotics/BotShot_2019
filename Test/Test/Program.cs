@@ -26,8 +26,8 @@ namespace Test
         const float SHOOTER_MARGIN = 25f;
 
         // Hood characteristics
-        const int HOOD_LOWER_BOUND_ANALOG = 632;
-        const int HOOD_UPPER_BOUND_ANALOG = 278;
+        const int HOOD_LOWER_BOUND_ANALOG = 586;
+        const int HOOD_UPPER_BOUND_ANALOG = 232; //232
         const int HOOD_LOWER_BOUND_ANGLE = 0; // degrees- when hood is in lowest position (ie all the way in)
         const int HOOD_UPPER_BOUND_ANGLE = 60; // degrees- when hood is all the way out - lowest angle shot
 
@@ -82,13 +82,13 @@ namespace Test
         // We only need one because the other follows over CAN
         // Andrew- add SPOT.Hardware.PWM to your references
         static PWMSpeedController shooterVESC;
-        static float shooterRPMTarget = 0;
+        static float shooterRPMTarget = 3000f;
 
         // PCM for shooter speed feedback
         static PneumaticControlModule pcm = new PneumaticControlModule(0);
         static int shooterFeedbackLEDPort = 7;
 
-        const int state = 0; // 0 = normal, 1 = skillshot mode, 2 = horse (distance) mode
+        const int state = 2; // 0 = normal, 1 = skillshot mode, 2 = horse (distance) mode
 
         public static void Main()
         {
@@ -115,11 +115,26 @@ namespace Test
                     {
                         doFlash();
                     }
-
+                    Debug.Print("" + feetDist);
                     Debug.Print("H: " + getHoodAngle() + " T: " + getTurretAngle() +"(" + turretTarget +") SV: " + getShooterRPM() + " SVT: " + shooterRPMTarget);
                 }
 
                 Thread.Sleep(10);
+            }
+        }
+
+        static void TargetLight()
+        {
+            if (!ledFlashActive)
+            {
+                if (gamepad.GetButton((uint)EBut.LT))
+                {
+                    shooterSensorTalon.Set(ControlMode.PercentOutput, 1.0);
+                }
+                else
+                {
+                    shooterSensorTalon.Set(ControlMode.PercentOutput, 0.0);
+                }
             }
         }
 
@@ -239,6 +254,10 @@ namespace Test
                     {
                         // Skill setpoint
                         skillPose++;
+                        if (skillPose > 5)
+                        {
+                            skillPose = 5;
+                        }
                         setSkillshot(skillPose);
                         flashCount(skillPose);
                     }
@@ -246,7 +265,7 @@ namespace Test
                     {
                         feetDist++;
                         flashCount(feetDist);
-                        setHoodAngleAndSpeed(feetDist / 12f);
+                        setHoodAngleAndSpeed(feetDist * 12f);
                     }
                     adjThingLockout = true;
                 }
@@ -257,7 +276,7 @@ namespace Test
                 {
                     if (state == 0)
                     {
-                        hoodSetpoint += 0.5f;
+                        hoodSetpoint -= 0.5f;
                     }
                     else if (state == 1)
                     {
@@ -273,8 +292,12 @@ namespace Test
                     else if (state == 2)
                     {
                         feetDist--;
+                        if (feetDist < 0)
+                        {
+                            feetDist = 0;
+                        }
                         flashCount(feetDist);
-                        setHoodAngleAndSpeed(feetDist / 12f);
+                        setHoodAngleAndSpeed(feetDist * 12f);
                     }
                     adjThingLockout = true;
                 }
@@ -288,7 +311,29 @@ namespace Test
 
         static void setSkillshot(int skill)
         {
-
+            switch(skill)
+            {
+                case 1:
+                    hoodSetpoint = 7.8f;
+                    shooterRPMTarget = 2750f;
+                    break;
+                case 2:
+                    hoodSetpoint = 19.3f;
+                    shooterRPMTarget = 3050f;
+                    break;
+                case 3:
+                    hoodSetpoint = 28.5f;
+                    shooterRPMTarget = 3225f;
+                    break;
+                case 4:
+                    hoodSetpoint = 34.4f;
+                    shooterRPMTarget = 3550f;
+                    break;
+                case 5:
+                    hoodSetpoint = 34.4f;
+                    shooterRPMTarget = 3550f;
+                    break;
+            }
         }
 
         static void flashCount(int count)
@@ -301,19 +346,25 @@ namespace Test
         static int ledFlashCounts = 0;
         static long flashTime = getMS();
         static bool ledOn = false;
+        static bool isLongFlash = false;
         static void doFlash()
         {
             if (ledFlashActive)
             {
                 long time_ = getMS();
-                if (time_ - flashTime > 100)
+                long delay = 100;
+                if (isLongFlash)
+                {
+                    delay = 500;
+                }
+                if (time_ - flashTime > delay)
                 {
                     flashTime = time_;
                     if (ledOn)
                     {
                         ledOn = false;
                         shooterSensorTalon.Set(ControlMode.PercentOutput, 0.0);
-                        if (ledFlashCounts == 0)
+                        if (ledFlashCounts <= 0)
                         {
                             ledFlashActive = false;
                         }
@@ -322,7 +373,15 @@ namespace Test
                     {
                         ledOn = true;
                         shooterSensorTalon.Set(ControlMode.PercentOutput, 1.0);
-                        ledFlashCounts--;
+                        isLongFlash = ledFlashCounts >= 5;
+                        if (isLongFlash)
+                        {
+                            ledFlashCounts -= 5;
+                        }
+                        else
+                        {
+                            ledFlashCounts--;
+                        }
                     }
                 }
             }
@@ -331,7 +390,7 @@ namespace Test
         static float turretTarget = 0;
         static void Turret()
         {
-            const float adj = 1f;
+            const float adj = 0.5f;
             if (gamepad.GetButton((uint)EBut.X))
             {
 
@@ -657,11 +716,14 @@ namespace Test
 
         static void setHoodAngleAndSpeed(float distanceIn)
         {
-            float robotDist = distanceIn - 30;
-            float hoodAngle = 0.1881f * robotDist + 2.719f;
-            float targetSpeed = 2938f + 15.07f * robotDist - 76.09f * hoodAngle + 0.046f * robotDist * robotDist - 0.741f * robotDist * hoodAngle + 2.788f * hoodAngle * hoodAngle;
-            hoodSetpoint = hoodAngle;
-            shooterRPMTarget = targetSpeed;
+            float robotDist = distanceIn;
+            float x = robotDist;
+
+            double hoodAngle = 7.091e-8 * System.Math.Pow(x, 4) - 3.842e-05 * System.Math.Pow(x, 3) + 0.006269 * System.Math.Pow(x, 2) - 0.1573 * x + 7.459;
+            double y = hoodAngle;
+            double targetSpeed = 2932 + 10.89 * x - 57 * y - 0.008035 * System.Math.Pow(x, 2) - 0.0891 * x * y + 0.9558 * System.Math.Pow(y, 2);
+            hoodSetpoint = (float)hoodAngle;
+            shooterRPMTarget = (float)targetSpeed;
         }
     }
 }
